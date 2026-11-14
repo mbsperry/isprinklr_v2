@@ -1,0 +1,35 @@
+# PlatformIO
+.pio/
+firmware/.pio/
+compile_commands.json
+*.bin
+*.elf
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Server runtime data
+server/data/
+server/logs/
+server/backups/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
