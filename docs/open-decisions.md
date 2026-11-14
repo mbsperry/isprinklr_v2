@@ -80,3 +80,6 @@ Recorded so they do not get relitigated.
 | Build system | PlatformIO, platform version pinned |
 | Firmware updates | OTA over HTTP; `espota` rejected |
 | Editor / IDE | CLI-driven; no VS Code requirement |
+| Hardware count | One board; ESP stays installed in the basement |
+| OTA failure recovery | App-level boot guard, not IDF rollback |
+| Phase 0 / v1 compatibility | Not required — system is winterized |

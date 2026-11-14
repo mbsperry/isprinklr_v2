@@ -1,17 +1,33 @@
 # Migration plan
 
-Phases ship independently. The v1 system keeps watering throughout: `isprinklr_api`
-stays authoritative until Phase 3 lands and is verified on real hardware.
+The system is winterized — shut down and blown out, with no watering for 5–6
+months. That removes the constraint this plan was originally built around: there
+is no live system to keep running, so phases need not preserve v1 behaviour and
+there is no cutover to stage. Phases are ordered by what depends on what, not by
+risk to the lawn.
 
-Phase 0 is the only phase requiring physical access to the device.
+The real deadline is first watering in spring. The real risk is arriving there
+with untested firmware.
+
+The ESP32 stays installed, wired to the Pro-C. Phase 0 is the only phase needing
+physical access; everything after it ships over OTA. USB access is awkward but
+not hard, so an occasional reflash is an acceptable fallback rather than a
+disaster.
 
 ---
 
 ## Phase 0 — OTA repartition
 
-One USB trip. Do this **before** schedules live in NVS: the repartition erases
-NVS, and right now there is nothing in it worth keeping (WiFi credentials come
-from build flags, not NVS).
+One USB trip. Implemented — see [`phase0-runbook.md`](phase0-runbook.md) for the
+exact command sequence and verification steps.
+
+Do this **before** schedules live in NVS: the repartition erases NVS, and right
+now there is nothing in it worth keeping (WiFi credentials come from build flags,
+not NVS).
+
+Because nothing is watering, Phase 0 firmware does **not** need to stay
+API-compatible with v1's Python API. It is a clean v2 build: network, status,
+OTA, boot guard. Nothing else.
 
 - Custom partition table: ~20 KB NVS / 8 KB otadata / 4 MB app0 / 4 MB app1 /
   ~7 MB LittleFS. The v1 board used `huge_app.csv` — a single app slot, so OTA was
@@ -29,13 +45,13 @@ from build flags, not NVS).
   Upstream still has no definition for this board, in either the official platform
   or pioarduino.
 
-**Bench verification before reinstalling.** The point of this trip is to never
-need USB again, so prove it on the desk:
-
-1. New partition table boots; Ethernet comes up; status endpoint responds.
-2. A firmware upload over HTTP succeeds and the new build boots.
-3. Do that twice, exercising both app slots (app0 → app1 → app0).
-4. Write an NVS key, power-cycle, read it back.
+Plus a boot guard: a counter in NVS, cleared once the device is serving on the
+network, that reverts to the previous OTA slot after three unhealthy boots. This
+covers the one failure OTA cannot — firmware that flashes and boots but is
+unreachable. ESP-IDF's own rollback does not help, because its default
+`CONFIG_BOOTLOADER_APP_ROLLBACK_CONFIRM_ON_STARTUP` confirms the image before
+`app_main` runs, and app-controlled confirmation needs an sdkconfig change the
+Arduino framework does not allow.
 
 ## Phase 1 — Test harness
 
@@ -77,7 +93,8 @@ on-device tests reboot and commandeer the board.
 - All NVS access funnelled through one task or behind a mutex — async handlers
   and the main loop both touch it, and NVS is not thread-safe.
 
-**This is the cutover.** Once verified, the ESP is authoritative.
+With no live v1 system to migrate from, this is not a cutover — just the point
+at which the device becomes self-sufficient.
 
 ## Phase 4 — Scheduling engine
 

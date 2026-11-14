@@ -2,9 +2,12 @@
 
 ESP32-S3 firmware. PlatformIO project.
 
-Nothing here yet — see [`../docs/migration-plan.md`](../docs/migration-plan.md).
-Phase 0 (partition table, OTA endpoint, pinned platform, vendored board
-definition) lands here first.
+**Phase 0 is written but never compiled.** First step is `pio run -e ethernet` at
+a desk; see [`../docs/phase0-runbook.md`](../docs/phase0-runbook.md).
+
+Phase 0 scope: network bring-up, a status endpoint, firmware upload over HTTP, and
+a boot guard that reverts to the previous OTA slot after three unhealthy boots.
+No zone control, no timekeeping, no schedule storage — those ship over OTA.
 
 ## Target
 
@@ -27,7 +30,7 @@ usable as-is; any I²C peripheral needs remapping.
 |---|---|
 | `ethernet` | Default build. Wired. |
 | `wifi` | Fallback build. |
-| `native` | Host unit tests (Unity). No hardware. |
+| `native` | Host unit tests (Unity). Phase 1; not present yet. |
 
 ## Toolchain
 
@@ -43,3 +46,16 @@ platform version in `platformio.ini`, not from the Core version.
 
 No VS Code requirement. `pio run -t compiledb` emits `compile_commands.json` for
 clangd.
+
+## Files
+
+| Path | Purpose |
+|---|---|
+| `platformio.ini` | Pinned platform, two device envs, partition table selection |
+| `partitions_ota.csv` | Dual 4 MB app slots, NVS, 7 MB LittleFS, coredump |
+| `boards/` | Vendored board definition — no upstream equivalent exists |
+| `include/config.h` | Pin map, timeouts, boot-guard threshold |
+| `src/net.cpp` | Ethernet or WiFi bring-up, selected at compile time |
+| `src/boot_guard.cpp` | NVS boot counter and OTA slot revert |
+| `src/web.cpp` | `GET /api/status`, `POST /api/update` |
+| `src/main.cpp` | Startup order and the link-check loop |
