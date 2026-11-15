@@ -37,10 +37,11 @@ OTA, boot guard. Nothing else.
   **Not `espota`** — that is the ArduinoOTA protocol (UDP 3232 + mDNS) whose
   behaviour over Ethernet rather than WiFi is unverified on this board. An HTTP
   POST rides the path already known to work.
-- Pin the platform. Try `espressif32@7.1.3` (ships Arduino-ESP32 3.3.12; v1's
-  `ETH.begin(ETH_PHY_W5500, ...)` is already 3.x API). Fall back to a pinned
-  pioarduino release tag if anything snags. Either way, pin it — v1 pointed at a
-  floating `stable` zip URL.
+- Pin the platform to a pioarduino release tag (currently `55.03.311`, Arduino-ESP32
+  3.3.11 / ESP-IDF 5.5.5). The official registry `espressif32@7.1.3` was tried and
+  ships Arduino-ESP32 2.0.17, where `ETH_PHY_W5500` and `SPI3_HOST` do not exist;
+  v1's `ETH.begin(ETH_PHY_W5500, ...)` is 3.x API. Either way, pin it — v1 pointed
+  at a floating `stable` zip URL.
 - Vendor the Waveshare ESP32-S3-ETH board definition in `firmware/boards/`.
   Upstream still has no definition for this board, in either the official platform
   or pioarduino.

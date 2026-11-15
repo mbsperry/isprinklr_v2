@@ -23,14 +23,13 @@ libraries). Do this on wifi at your desk.
 
 Expect to fix something. Points of risk, in rough order of likelihood:
 
-- **Library versions.** `ESP32Async/AsyncTCP@^3.0.0` and
-  `ESPAsyncWebServer@^3.0.0` are pinned by major version only. Run
-  `pio pkg outdated` and tighten once you see what resolves.
-- **`platform = espressif32@7.1.3`.** If it fails to resolve or breaks the
-  W5500 call, fall back to a pinned pioarduino release tag. Do not go back to a
-  floating URL.
-- **`ETH.begin(...)` signature.** Carried over from v1, which built against
-  pioarduino's Arduino 3.x. Should be identical on official 7.1.3; verify.
+- **Platform.** Pinned to pioarduino `55.03.311` (Arduino-ESP32 3.3.11). The
+  official `espressif32@7.1.3` ships Arduino 2.0.17 and cannot compile the W5500
+  call. Do not go back to a floating URL.
+- **Library versions.** Pinned exactly (AsyncTCP 3.6.1, ESPAsyncWebServer 3.12.1,
+  ArduinoJson 7.4.3). `pio pkg outdated` shows what's newer.
+- CI (`.github/workflows/firmware.yml`) builds both envs on every firmware change,
+  so a green check on the branch means it compiles.
 
 Record the flash figure the build prints. The app slot is 4 MB; v1's binary was
 built for a ~3 MB single slot, so there should be ample room.
