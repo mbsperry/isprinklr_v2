@@ -3,9 +3,9 @@
 First run of the v2 Hunter driver against the real Pro-C. Everything here ships
 over OTA and is driven from the Mac; only step 8 needs the basement.
 
-**Status: not yet run.** The driver is host-tested (frames byte-identical to
-v1's, pulse timing asserted) and compiles for both device envs. Nothing has been
-sent to the Pro-C from v2 yet.
+**Status: run 2026-11-15, passed.** Results are under [Record](#record) at the
+end. The driver is also host-tested (frames byte-identical to v1's, pulse timing
+asserted).
 
 The system is winterized, so a commanded zone clicks a dry valve and nothing
 waters. Stand near the Pro-C (or have its display in view) for steps 2–7; the
@@ -151,5 +151,40 @@ restart anything at boot.
 
 ## Record
 
-Write the outcome of steps 4, 6 and 8 into this file, then flip the status line
-at the top. Step 6's answer goes into the Phase 4 design.
+Run 2026-11-15 with firmware `0.2.0-phase1` (merged PR #3), Matt watching the
+Pro-C display, commands sent from the Mac. 10 zones installed.
+
+| Step | Result |
+|---|---|
+| 1. Deploy | OTA accepted; booted healthy on `app0`; bus ready, 0 frames. Display idle after the reboot. |
+| 2. Start zone 1, 2 min | Display: zone 1, 2 minutes. Frame 646.8 ms (nominal 645.25). |
+| 3. Stop | Display idle. |
+| 4. Zone above 12 | **Not tested**: only 10 zones installed. The 13–48 header bits stay verified only against v1's bytes. |
+| 5. Run ends on its own | 1-minute run went idle at about one minute with no stop sent. |
+| 6. Start B while A runs | **Zone 2 replaced zone 1.** Display showed zone 2 for 3 minutes; no queuing. Recorded in open decision 6. |
+| 7. Bad requests | 400 for zero minutes, `duration_seconds`, zone 49, string zone; 415 without JSON content type; 409 for a bare stop when idle. `frames_sent` unchanged. |
+| 7b. Zone vs OTA | Upload sent while a start frame was going out: 503 `busy`, nothing flashed. |
+| 8. ESP power loss mid-run | Started zone 1 for 2 min, then unplugged the PoE cable. The Pro-C kept running zone 1 and went idle on its own. The ESP came back with `reset_reason: power_on`, healthy, `commanded_zone: null`, and `frames_sent: 0`, so it sent nothing at boot. |
+
+**Pro-C behaviour when the ESP loses power (observed by Matt, 2026-11-15).**
+The Pro-C's watering icon blinks steadily while a zone runs with the ESP
+powered. With the ESP unplugged mid-run, it blinks irregularly. On plugging the
+ESP back in, the Pro-C briefly showed `ERR`, went back to blinking steadily, and
+finished the zone normally. Not understood yet. A likely explanation: the REM pin
+is wired straight to GPIO 18 with no resistor. Unpowered, the ESP stops holding
+the line LOW and its protection diodes load it, so the Pro-C sees an undriven,
+noisy REM line. At power-up the boot transient on the pin reaches the Pro-C as
+an invalid frame, so it shows `ERR` and ignores it, which is the outcome we
+wanted. Nothing was misread as a command. **Repeat step 8 in spring with the
+water on**, and watch that the valve really closes on time. If the irregular
+blink ever matters, a series resistor (around 1 kΩ) between GPIO 18 and REM would
+limit current into an unpowered pin. That needs testing against the Pro-C before
+it's fitted.
+
+**Frame stretch under network load.** Frames sent while a firmware upload was
+streaming in took 778–804 ms instead of ~646 ms. Frames at other times were
+646–647 ms. The stretch has to fall outside the interrupts-off bit pairs: in the
+yielding reset pulse or the gaps between bits. A deliberate check (zone 3,
+5 minutes, sent under the same load) decoded exactly on the Pro-C, so the
+stretch is tolerated. Worth keeping in mind if a frame is ever misread; the fix
+would be keeping interrupts off across the whole data section, or RMT.
