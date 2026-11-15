@@ -36,6 +36,12 @@ constexpr uint32_t kNetworkTimeoutMs = 30000;
 constexpr const char* kNtpServers[3] = {"192.168.88.1", "pool.ntp.org",
                                         "time.google.com"};
 
+// Reboot recovery (open decision 1): after a reboot mid-run, carry on with
+// the remaining zones only if the ESP is back within this long of when the
+// next zone was due; otherwise skip them until the next scheduled day. The zone
+// that was running always finishes, because the Pro-C holds its timer.
+constexpr uint32_t kRecoveryWindowSeconds = 60 * 60;
+
 // Consecutive boots that fail to reach a healthy state before the boot guard
 // reverts to the other OTA slot.
 constexpr uint32_t kMaxFailedBoots = 3;

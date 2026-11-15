@@ -1,0 +1,11 @@
+{
+  "name": "zone_control",
+  "description": "Zone command logic and HTTP-shaped run endpoints. Pure; host-tested.",
+  "dependencies": [
+    {"name": "ArduinoJson"},
+    {"name": "api"},
+    {"name": "hunter"},
+    {"name": "sequencer"},
+    {"name": "settings"}
+  ]
+}

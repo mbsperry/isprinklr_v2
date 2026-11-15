@@ -151,6 +151,14 @@ void test_start_replaces_record() {
   TEST_ASSERT_EQUAL_UINT(2, g_sent.size());
 }
 
+void test_adopt_shows_countdown_without_sending() {
+  ZoneController zc(sink);
+  zc.adopt(2, 2, 1000);  // started 1 s into uptime, as if before a reboot
+  TEST_ASSERT_EQUAL_UINT(0, g_sent.size());
+  TEST_ASSERT_EQUAL(2, zc.active(61000)->zone);
+  TEST_ASSERT_EQUAL_UINT32(60000, zc.remainingMs(61000));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_start_sends_start_frame_and_records_run);
@@ -167,5 +175,6 @@ int main() {
   RUN_TEST(test_stop_other_zone_keeps_active_record);
   RUN_TEST(test_stop_rejects_invalid_zone);
   RUN_TEST(test_start_replaces_record);
+  RUN_TEST(test_adopt_shows_countdown_without_sending);
   return UNITY_END();
 }

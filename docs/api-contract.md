@@ -3,7 +3,7 @@
 **Status: partly implemented.** `/api/status`, `/api/zone/start`,
 `/api/zone/stop`, and `/api/update` exist as of Phase 1, and the `time` fields
 of `/api/status` as of Phase 2, and the schedule, zone and config endpoints as
-of Phase 3; their shapes below are
+of Phase 3, and the run endpoints and status fields as of Phase 4; their shapes below are
 the implemented ones. The rest is the shape to design against, and this file
 should change with the firmware.
 
@@ -25,12 +25,15 @@ The frontend holds a base URL for each.
 | PUT | `/api/schedules` | Replace stored schedules. Validated before commit. *Implemented.* |
 | PUT | `/api/schedule/active` | Set the active schedule. *Implemented.* |
 | GET/PUT | `/api/schedule/enabled` | The on/off flag. *Implemented.* |
-| POST | `/api/schedule/run` | Run a schedule now. |
+| POST | `/api/schedule/run` | Run a saved schedule now. *Implemented (Phase 4).* |
+| POST | `/api/run` | Run an ad-hoc list of zones now. *Implemented (Phase 4).* |
 | GET | `/api/zones` | Zone numbers and names. *Implemented.* |
 | PUT | `/api/zones` | Replace the zone list. *Implemented.* |
 | GET | `/api/logs` | The RAM ring buffer. |
 | GET/PUT | `/api/config` | Device config: schedule time, timezone. *Implemented.* Log sink address comes with Phase 5. |
-| POST | `/api/update` | Firmware upload (OTA). *Implemented.* |
+| POST | `/api/update` | Firmware upload (OTA). *Implemented.* Refused while a run is in progress. |
+| POST | `/api/run/skip` | Skip the zone the run is on. *Implemented (Phase 4).* |
+| POST | `/api/restart` | Reboot. *Implemented (Phase 4).* 409 during a run unless `?force=1`. |
 
 Notes:
 
@@ -54,23 +57,56 @@ Bounds come from `firmware/lib/hunter/src/hunter_limits.h`: zones 1–48,
 `duration_minutes` 1–240. Values must be JSON integers; strings, floats
 (including `10.0`), booleans and null are rejected, never coerced.
 
-`POST /api/zone/start` — `{"zone": 3, "duration_minutes": 10}`
+Since Phase 4 both go through the sequencer, which owns all zone commands.
 
-`POST /api/zone/stop` — `{}` stops the zone this device last started, if its run
-has not elapsed. `{"zone": 3}` stops that zone whether or not the device thinks
-it is running, which is how to stop a run that outlived an ESP reboot.
+`POST /api/zone/start` — `{"zone": 3, "duration_minutes": 10}`. Queues a
+manual run. If a schedule or another manual run is going, it goes on the end
+and never cuts in. The response carries `"queued_behind": N`. Manual starts
+ignore the schedule on/off flag and `time_valid`.
+
+`POST /api/zone/stop`:
+- `{}` cancels the run. It stops the running zone, and the zone plus
+  everything still queued is marked `interrupted`. It is never refused for
+  being busy.
+- `{"zone": 3}` stops that zone. If it is the zone the run is on, that is a
+  cancel too. Otherwise it is just a stop, which is how to stop a zone started
+  at the Pro-C or before an ESP reboot.
+
+`POST /api/schedule/run` — `{"name": "Catch up"}`. Runs every zone in a saved
+schedule once, now, in schedule order, ignoring its day patterns. Zones marked
+`NONE` are left out. It returns 202
+`{"action": "run_schedule", "schedule": "Catch up", "zones": [1, 2, ...],
+"queued_behind": 0}`, 404 `unknown_schedule`, or 409 `nothing_to_run` (every
+zone is `NONE`).
+
+`POST /api/run` — `{"items": [{"zone": 1, "duration_minutes": 20}, ...]}`. An
+ad-hoc queue, run now, without saving a schedule. Every item is validated
+first. If any is bad (400 naming `items[i]`), or the run would pass 64 entries
+(503 `queue_full`), nothing is queued.
+
+Both behave like manual starts. They ignore the on/off flag and `time_valid`,
+join the end of any run in progress, and are cancelled or skipped the same
+way. Their entries have `origin: "manual"`.
+
+`POST /api/run/skip`, no body: stops the running zone, marks it `skipped`,
+and moves on to the next after the usual pad. Between zones it skips the one
+about to start. Returns 202 `{"action": "skip", "zone": N}`, or 409
+`nothing_to_skip`.
 
 | Status | Body | Meaning |
 |---|---|---|
-| 202 | `{"ok": true, "action": "start", "zone": 3, "duration_minutes": 10}` | Frame queued for the bus. Sent within about a second. |
+| 202 | `{"ok": true, "action": "start", "zone": 3, "duration_minutes": 10, "queued_behind": 0}` | Queued; starts within ~0.1 s if nothing is ahead of it. |
+| 202 | `{"ok": true, "action": "cancel" \| "stop", "zone": 3}` | Stop sent (retried if the bus is busy). For a cancel between zones, `zone` is `null`. |
 | 400 | `{"ok": false, "error": "invalid_zone" \| "invalid_duration" \| "invalid_body", "message": "..."}` | Nothing sent. `message` names the bounds. |
-| 409 | `{"ok": false, "error": "no_active_zone", ...}` | Stop with no zone given and nothing known to be running. |
-| 503 | `{"ok": false, "error": "bus_busy", ...}` | Bus queue full (4 frames, ~0.65 s each). Nothing changed; retry. |
+| 409 | `{"ok": false, "error": "no_active_zone", ...}` | `{}` stop with nothing running or queued. |
+| 503 | `{"ok": false, "error": "queue_full", ...}` | The run already holds 64 entries. Nothing changed. |
 | 503 | `{"ok": false, "error": "update_in_progress", ...}` | A firmware upload is running or the device is about to reboot into one. Nothing sent. |
 
-Zone commands and firmware updates exclude each other so a reboot can never
-cut a frame mid-bit. `POST /api/update` returns 503 `"error": "busy"` (nothing
-flashed) if a frame is on the wire or queued, or another upload is live. An
+Zone commands and firmware updates exclude each other, so a reboot can never
+cut a frame mid-bit or interrupt a run on purpose. `POST /api/update` returns
+503 `"error": "busy"` and flashes nothing in three cases: a run is in progress,
+a frame is on the wire or queued, or another upload is live. An upload with no
+complete image returns 500 and does not reboot. An
 upload that sends nothing for 30 s counts as abandoned: it stops blocking zone
 commands, and the next upload aborts it.
 
@@ -86,6 +122,44 @@ from the Pro-C to wait for anyway.
                "frames_sent": 4, "frames_dropped": 0,
                "last_sent_ago_ms": 9120, "last_frame_us": 645310}
 ```
+
+Phase 4 adds the run, the daily trigger, and reboot recovery:
+
+```json
+"run": {"state": "running", "schedule": "Fall", "current_index": 1,
+        "remaining_seconds": 412,
+        "entries": [{"zone": 1, "duration_minutes": 20, "origin": "schedule",
+                     "outcome": "skipped", "started_epoch": 1794755582},
+                    {"zone": 3, "duration_minutes": 20, "origin": "schedule",
+                     "outcome": "running", "started_epoch": 1794755890},
+                    {"zone": 7, "duration_minutes": 5, "origin": "manual",
+                     "outcome": "pending"}]},
+"trigger": {"last_decision": "already_ran", "window_minutes": 60,
+            "last_run_day": 20407},
+"recovery": {"result": "none", "window_minutes": 60}
+```
+
+- **`state`:** `idle`, `starting` (retrying a busy bus), `running`, or
+  `padding` (the 5 s between stop(A) and start(B)).
+- **`entries`:** the run in progress, or the last one once idle, so an
+  interrupted run stays visible until the next one starts.
+- **`outcome`:** `pending`, `running`, `completed`, `skipped`, `interrupted`
+  (cancelled, or dropped by recovery), or `failed` (the bus refused the start
+  five times; the run is abandoned).
+- **`schedule`:** `null` for a purely manual run.
+- **`zones`** (above) still carries the running zone's countdown, in the same
+  shape for manual and scheduled runs.
+- **`trigger.last_decision`:** `due`, `time_invalid`, `disabled`,
+  `no_active_schedule`, `already_ran`, `before_start`, or `window_missed`.
+  The run starts once per local date, between `start_time` and 60 minutes
+  after it.
+- **`last_run_day`:** days since 1970-01-01, recorded when a run starts.
+- **`recovery.result`:**
+  - `none`
+  - `waiting_for_time`: an interrupted run was found at boot
+  - `resumed` or `skipped`: per open decision 1, with `late_seconds`
+  - `superseded`: a manual start came first
+  - `checkpoint_unreadable`
 
 Phase 2 adds `time_valid` (top level) and:
 

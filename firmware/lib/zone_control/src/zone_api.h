@@ -8,6 +8,8 @@
 #include <cstdint>
 
 #include "api_response.h"
+#include "sequencer.h"
+#include "settings.h"
 #include "zone_controller.h"
 
 // The HTTP-shaped half of zone control: request bodies in, status code and JSON
@@ -21,13 +23,46 @@ namespace zone_api {
 
 using Response = api::Response;
 
+// Since Phase 4 both go through the sequencer, the only owner of zone commands.
+
 // POST /api/zone/start   {"zone": 3, "duration_minutes": 10}
-Response start(ZoneController& zones, JsonVariantConst request, uint32_t nowMs);
+// Queues a manual run. If a run is in progress it goes on the end; it never
+// cuts in. 202 with "queued_behind": how many entries are ahead of it.
+Response start(seq::Sequencer& sequencer, JsonVariantConst request);
 
 // POST /api/zone/stop    {} or {"zone": 3}
-Response stop(ZoneController& zones, JsonVariantConst request, uint32_t nowMs);
+// {} cancels the run: stops the running zone and drops everything queued.
+// {"zone": N} stops N; if N is the running zone that is also a cancel.
+// Never refused for being busy.
+Response stop(seq::Sequencer& sequencer, JsonVariantConst request,
+              uint32_t nowMs);
 
-// The "zones" object in GET /api/status.
+// POST /api/schedule/run   {"name": "Catch up"}
+// Runs every zone in a saved schedule once, now, in schedule order, ignoring
+// its day patterns. Zones marked NONE are left out. Like a manual start, it
+// ignores the on/off flag and time_valid, and goes on the end of any run in
+// progress. 404 unknown schedule; 409 if every zone is NONE.
+Response runSchedule(seq::Sequencer& sequencer, const settings::Settings& s,
+                     JsonVariantConst request);
+
+// POST /api/run   {"items": [{"zone": 1, "duration_minutes": 20}, ...]}
+// An ad-hoc queue, run now, without saving a schedule. All items are
+// validated first; if any is bad, or the run would exceed its entry cap,
+// nothing is queued.
+Response runItems(seq::Sequencer& sequencer, JsonVariantConst request);
+
+// POST /api/run/skip    {}
+// Skips the zone the run is on (or about to start) and moves to the next.
+// 409 if nothing is running or queued.
+Response skip(seq::Sequencer& sequencer, uint32_t nowMs);
+
+// The "zones" object in GET /api/status: the zone last commanded and its
+// countdown, the same shape for manual and scheduled runs.
 void describe(const ZoneController& zones, uint32_t nowMs, JsonObject out);
+
+// The "run" object in GET /api/status: the sequencer's state and the current
+// (or last) run, entry by entry.
+void describeRun(const seq::Sequencer& sequencer, uint32_t nowMs,
+                 JsonObject out);
 
 }  // namespace zone_api

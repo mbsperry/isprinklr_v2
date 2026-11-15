@@ -14,6 +14,7 @@
 #include "config.h"
 #include "hunter_bus.h"
 #include "net.h"
+#include "sequencer_service.h"
 #include "settings_api.h"
 #include "settings_service.h"
 #include "wallclock.h"
@@ -23,7 +24,6 @@ namespace web {
 namespace {
 
 AsyncWebServer server(80);
-ZoneController* g_zones = nullptr;
 
 // Zone request bodies are a few dozen bytes. Settings bodies use the verbose
 // API shape, several times the stored size; 16 KB covers anything that could
@@ -37,6 +37,10 @@ uint32_t g_restartAt = 0;
 // Upload state. Touched only from the async web task (upload and zone
 // handlers), never from loop(), so Update is never driven from two tasks.
 bool g_uploadRejected = false;
+// Set only when Update.end(true) accepted a complete image. An empty file
+// field, or a request with no file at all, never reaches it, so it must not be
+// reported as success (it was, until Phase 4 testing caught it).
+bool g_uploadSucceeded = false;
 uint32_t g_lastUploadChunkMs = 0;
 
 // An update is in flight and has not stalled. Update.isRunning() alone stays
@@ -66,7 +70,7 @@ void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
 
   doc["firmware_version"] = FW_VERSION;
-  doc["phase"] = "3";
+  doc["phase"] = "4";
   doc["uptime_ms"] = millis();
   doc["reset_reason"] = resetReasonName(esp_reset_reason());
 
@@ -87,8 +91,7 @@ void handleStatus(AsyncWebServerRequest* request) {
     return 0;
   });
 
-  JsonObject zones = doc["zones"].to<JsonObject>();
-  zone_api::describe(*g_zones, millis(), zones);
+  sequencer_service::describe(doc.as<JsonObject>());
 
   JsonObject bus = doc["hunter_bus"].to<JsonObject>();
   hunter_bus::describe(bus);
@@ -124,11 +127,18 @@ void sendJson(AsyncWebServerRequest* request, int status,
 
 // Route handlers only adapt between AsyncWebServer and zone_api, which holds
 // the validation and response shapes and is host-tested.
+// For routes that need settings: copied under the settings lock before the
+// sequencer lock is taken, so the two are never held together. Only the async
+// web task touches it.
+settings::Settings g_settingsSnapshot;
+
 void addZoneRoute(const char* path,
-                  zone_api::Response (*handler)(ZoneController&,
-                                                JsonVariantConst, uint32_t)) {
+                  zone_api::Response (*handler)(seq::Sequencer&,
+                                                JsonVariantConst, uint32_t),
+                  bool needsSettings = false) {
   auto* h = new AsyncCallbackJsonWebHandler(
-      path, [handler](AsyncWebServerRequest* request, JsonVariant& json) {
+      path, [handler, needsSettings](AsyncWebServerRequest* request,
+                                     JsonVariant& json) {
         // An accepted update reboots shortly; a zone frame queued now could
         // be cut off mid-bit. Refuse rather than start something we may not
         // finish sending.
@@ -138,13 +148,34 @@ void addZoneRoute(const char* path,
                         "\"message\":\"firmware update in progress; retry after reboot\"}");
           return;
         }
-        const zone_api::Response r = handler(*g_zones, json, millis());
+        if (needsSettings) {
+          g_settingsSnapshot = settings_service::with(
+              [](SettingsStore& st) { return st.current(); });
+        }
+        const uint32_t nowMs = millis();
+        const zone_api::Response r = sequencer_service::with(
+            [&](seq::Sequencer& s) { return handler(s, json, nowMs); });
         Serial.printf("[web] %s -> %d\n", request->url().c_str(), r.status);
         sendJson(request, r.status, r.body);
       });
   h->setMethod(HTTP_POST);
   h->setMaxContentLength(kMaxZoneBodyBytes);
   server.addHandler(h);
+}
+
+zone_api::Response startZone(seq::Sequencer& s, JsonVariantConst body,
+                             uint32_t) {
+  return zone_api::start(s, body);
+}
+
+zone_api::Response runItems(seq::Sequencer& s, JsonVariantConst body,
+                            uint32_t) {
+  return zone_api::runItems(s, body);
+}
+
+zone_api::Response runScheduleNow(seq::Sequencer& s, JsonVariantConst body,
+                                  uint32_t) {
+  return zone_api::runSchedule(s, g_settingsSnapshot, body);
 }
 
 void addSettingsGet(const char* path,
@@ -181,31 +212,36 @@ void applyConfig(const SettingsStore& store) {
 }
 
 bool isJsonOnlyPath(const String& url) {
-  return url.startsWith("/api/zone/") || url == "/api/schedules" ||
+  return url.startsWith("/api/zone/") || url == "/api/run" ||
+         url == "/api/schedules" ||
          url.startsWith("/api/schedule/") || url == "/api/zones" ||
          url == "/api/config";
 }
 
 void sendUpdateResult(AsyncWebServerRequest* request) {
   if (g_uploadRejected) {
+    g_uploadRejected = false;
     AsyncWebServerResponse* response = request->beginResponse(
         503, "application/json",
-        "{\"ok\":false,\"error\":\"busy\",\"message\":\"a zone command "
-        "or another upload is in progress; nothing was flashed, retry shortly\"}");
+        "{\"ok\":false,\"error\":\"busy\",\"message\":\"a run, a zone "
+        "command or another upload is in progress; nothing was flashed. Cancel "
+        "the run (POST /api/zone/stop {}) or retry shortly\"}");
     response->addHeader("Connection", "close");
     request->send(response);
     return;
   }
 
-  const bool ok = !Update.hasError();
+  const bool ok = g_uploadSucceeded && !Update.hasError();
+  g_uploadSucceeded = false;
 
   JsonDocument doc;
   doc["ok"] = ok;
   if (ok) {
     doc["message"] = "update accepted, rebooting";
   } else {
-    doc["message"] = "update failed";
-    doc["error"] = Update.errorString();
+    doc["message"] = "update failed; running firmware unchanged";
+    doc["error"] = Update.hasError() ? Update.errorString()
+                                     : "no complete firmware image received";
   }
 
   String out;
@@ -223,15 +259,19 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
                   size_t index, uint8_t* data, size_t len, bool final) {
   if (index == 0) {
     g_lastUploadChunkMs = millis();
+    g_uploadSucceeded = false;
 
     // Refuse to start while a frame is on the wire or queued: the reboot at the
     // end could otherwise land mid-frame. Zone routes are refused while an
     // update runs, so the bus cannot get busy again until this one finishes.
     // A second upload while one is live is refused too; a stalled one is
     // aborted and replaced.
-    g_uploadRejected = !hunter_bus::idle() || updateActive();
+    // A run in progress is refused too: rebooting mid-run is exactly the
+    // case reboot recovery exists for, and there is no reason to cause it.
+    g_uploadRejected = !hunter_bus::idle() || updateActive() ||
+                       !sequencer_service::idle();
     if (g_uploadRejected) {
-      Serial.println("[ota] refused: bus busy or another upload in progress");
+      Serial.println("[ota] refused: run in progress, bus busy, or another upload");
       return;
     }
 
@@ -260,25 +300,62 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
   }
 
   if (final) {
-    if (Update.end(true)) {
+    if (index + len > 0 && Update.end(true)) {
+      g_uploadSucceeded = true;
       Serial.printf("[ota] complete, %u bytes\n",
                     static_cast<unsigned>(index + len));
     } else {
       Serial.printf("[ota] end failed: %s\n", Update.errorString());
+      // Release it now rather than leave zone commands blocked until the
+      // stall timeout.
+      if (Update.isRunning()) Update.abort();
     }
   }
 }
 
 }  // namespace
 
-void begin(ZoneController& zones) {
-  g_zones = &zones;
-
+void begin() {
   server.on("/api/status", HTTP_GET, handleStatus);
 
   // curl -H "Content-Type: application/json" -d '{"zone":3,"duration_minutes":2}' http://<ip>/api/zone/start
-  addZoneRoute("/api/zone/start", zone_api::start);
+  addZoneRoute("/api/zone/start", startZone);
   addZoneRoute("/api/zone/stop", zone_api::stop);
+
+  // Reboot. Refused (409) while a run is in progress unless ?force=1, which
+  // exists so reboot recovery can be tested without a power cut.
+  server.on("/api/restart", HTTP_POST, [](AsyncWebServerRequest* request) {
+    const bool force = request->hasParam("force") &&
+                       request->getParam("force")->value() == "1";
+    if (!force && !sequencer_service::idle()) {
+      request->send(409, "application/json",
+                    "{\"ok\":false,\"error\":\"run_in_progress\","
+                    "\"message\":\"a run is in progress; cancel it or add ?force=1\"}");
+      return;
+    }
+    Serial.printf("[web] restart requested%s\n", force ? " (forced)" : "");
+    AsyncWebServerResponse* response = request->beginResponse(
+        200, "application/json", "{\"ok\":true,\"message\":\"restarting\"}");
+    response->addHeader("Connection", "close");
+    request->send(response);
+    g_restartAt = millis() + config::kRestartDelayMs;
+  });
+
+  // No body needed: curl -X POST http://<ip>/api/run/skip
+  server.on("/api/run/skip", HTTP_POST, [](AsyncWebServerRequest* request) {
+    const uint32_t nowMs = millis();
+    const zone_api::Response r = sequencer_service::with(
+        [nowMs](seq::Sequencer& s) { return zone_api::skip(s, nowMs); });
+    Serial.printf("[web] /api/run/skip -> %d\n", r.status);
+    sendJson(request, r.status, r.body);
+  });
+
+  // Run a saved schedule now, or an ad-hoc list. Both go through the
+  // sequencer like manual starts; neither touches stored settings.
+  // Registered after /api/run/skip: a plain-string route also matches its
+  // sub-paths, so the more specific one must come first.
+  addZoneRoute("/api/schedule/run", runScheduleNow, /*needsSettings=*/true);
+  addZoneRoute("/api/run", runItems);
 
   addSettingsGet("/api/schedules", settings_api::getSchedules);
   addSettingsPut("/api/schedules", settings_api::putSchedules);

@@ -122,6 +122,22 @@ at which the device becomes self-sufficient.
 
 ## Phase 4 — Scheduling engine
 
+**Implemented and running on the device (0.5.0-phase4, 2026-11-15).** These
+pieces are in, all host-tested:
+
+- the sequencer (`lib/sequencer`)
+- the daily trigger, with a 60-minute start window and a persisted last-run day
+- the checkpoint and reboot recovery (decision 1: resume within 60 minutes)
+- cancel and skip
+- refusing OTA while a run is in progress
+
+On the device it has run a manual two-zone queue and a scheduled three-zone
+run with a skip and a forced reboot mid-zone; see `hardware-test-phase4.md`.
+
+The plan below said "driven off the async task". It ended up ticking from the
+Arduino loop task, under one mutex, because zone commands only enqueue and the
+bus task does the slow part.
+
 - Daily trigger at a configured hour/minute; a persisted last-run date makes it
   idempotent across reboots.
 - Sequencing state machine with inter-zone padding, driven off the async task.

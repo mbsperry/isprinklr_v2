@@ -52,6 +52,13 @@ class ZoneController {
   // reboot can still be stopped.
   Result stop(std::optional<int> zone, uint32_t nowMs);
 
+  // Records a run the Pro-C is already doing without sending anything: after
+  // reboot recovery, so status keeps showing its countdown. startedMs may be
+  // in the past.
+  void adopt(int zone, int durationMinutes, uint32_t startedMs) {
+    run_ = Run{zone, durationMinutes, startedMs};
+  }
+
   std::optional<Run> active(uint32_t nowMs) const;
 
   // Milliseconds left in the active run, or 0.

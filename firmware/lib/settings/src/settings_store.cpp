@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Matt Sperry
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "settings_store.h"
 
 #include "settings_json.h"

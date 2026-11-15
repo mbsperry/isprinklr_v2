@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Matt Sperry
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// iSprinklr v2 — Phase 3
+// iSprinklr v2 — Phase 4
 //
 // Network, status, OTA, boot guard (Phase 0); manual zone control over the
 // Hunter SmartPort line (Phase 1); SNTP time with a validity flag (Phase 2);
-// zones, schedules and config stored in NVS (Phase 3). Running schedules
-// (Phase 4) and log export ship over OTA later.
+// zones, schedules and config stored in NVS (Phase 3); the sequencer and daily
+// trigger that run them (Phase 4). Log export ships over OTA later.
 
 #include <Arduino.h>
 
@@ -17,14 +17,13 @@
 #include "settings_service.h"
 #include "wallclock.h"
 #include "web.h"
-#include "zone_controller.h"
+#include "sequencer_service.h"
 
 namespace {
 
 constexpr uint32_t kLinkCheckIntervalMs = 10000;
 uint32_t g_lastLinkCheck = 0;
 
-ZoneController g_zones(hunter_bus::enqueue);
 
 }  // namespace
 
@@ -35,7 +34,7 @@ void setup() {
 
   Serial.begin(115200);
   delay(200);  // let USB CDC enumerate before the first log line
-  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 3)\n", FW_VERSION);
+  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 4)\n", FW_VERSION);
 
   // Before anything that can fail: if the last few boots never reached a healthy
   // state, this reverts to the previous OTA slot and does not return.
@@ -58,7 +57,8 @@ void setup() {
   wallclock::begin(settings_service::with(
       [](SettingsStore& s) { return s.current().config.timezone; }));
 
-  web::begin(g_zones);
+  sequencer_service::begin();
+  web::begin();
 
   if (net::isUp()) {
     boot_guard::markHealthy();
@@ -69,6 +69,7 @@ void setup() {
 
 void loop() {
   web::tick();
+  sequencer_service::tick();
 
   const uint32_t now = millis();
   if (now - g_lastLinkCheck >= kLinkCheckIntervalMs) {

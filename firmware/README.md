@@ -18,6 +18,11 @@ status. Running on the device since 2026-11-15.
 config in NVS, with read/write endpoints. Running on the device since
 2026-11-15, holding the data imported from v1.
 
+**Phase 4** runs schedules. A sequencer owns every zone command, both
+scheduled and manual. A daily trigger starts the active schedule. A checkpoint
+in NVS lets a run recover after a reboot (resume within 60 minutes, else skip).
+Cancel and skip work mid-run. Running on the device since 2026-11-15.
+
 ### Router NTP
 
 The firmware asks the MikroTik router (192.168.88.1) first, then
@@ -101,6 +106,8 @@ clangd.
 | `lib/settings/` | Settings model, day patterns, validation, JSON shapes, NVS store, route logic |
 | `lib/api/` | Shared response type for host-tested route logic |
 | `src/settings_service.cpp` | The device's settings store behind a mutex |
+| `lib/sequencer/` | Run queue (stop-pad-start, cancel, skip), daily trigger, checkpoint and recovery |
+| `src/sequencer_service.cpp` | The device's sequencer behind a mutex; trigger, checkpoint saves, recovery |
 | `lib/timekeeping/` | Time validity policy, local time and DST, ISO formatting |
 | `src/wallclock.cpp` | SNTP start-up and sync tracking |
 | `src/net.cpp` | Ethernet or WiFi bring-up, selected at compile time |
