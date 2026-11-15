@@ -17,19 +17,19 @@ status. Running on the device since 2026-11-15.
 ### Router NTP
 
 The firmware asks the MikroTik router (192.168.88.1) first, then
-`pool.ntp.org`, then `time.google.com`. The router doesn't serve NTP today.
-Enabling it lets the ESP get the time after a reboot during a WAN outage,
-because the router keeps serving its own clock. On RouterOS 7, in the router's
-terminal:
+`pool.ntp.org`, then `time.google.com`. The router's NTP server was enabled on
+2026-11-15, so the ESP gets the time after a reboot even during a WAN outage,
+because the router keeps serving its own clock. lwIP sticks with whichever
+server answered last, so after a router outage it may stay on a fallback until
+the next reboot. For reference, the RouterOS 7 setup was:
 
 ```
 /system ntp client set enabled=yes servers=pool.ntp.org
 /system ntp server set enabled=yes
 ```
 
-RouterOS 6 needs the separate `ntp` package instead. Check it worked from the
-Mac with `sntp 192.168.88.1`, then look for `"reachable": true` on the router in
-`/api/status` within an hour.
+Check it from the Mac with `sntp -d 192.168.88.1` (look for a stratum), and
+in `/api/status` the router shows `"reachable": true`.
 
 ## Layout rule
 

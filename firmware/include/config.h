@@ -28,8 +28,8 @@ constexpr uint32_t kNetworkTimeoutMs = 30000;
 
 // SNTP servers, tried in order; lwIP moves on when one stops answering. The
 // router first: once its NTP server is enabled it keeps serving its own clock
-// through a WAN outage, so a reboot during one can still get the time. As of
-// 2026-11-15 it does not answer NTP, so the pool carries the load.
+// through a WAN outage, so a reboot during one can still get the time. Router
+// NTP server enabled 2026-11-15. The others are fallbacks.
 constexpr const char* kNtpServers[3] = {"192.168.88.1", "pool.ntp.org",
                                         "time.google.com"};
 
