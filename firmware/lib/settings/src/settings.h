@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include "day_pattern.h"
+#include "settings_limits.h"
 #include "timekeeping.h"
 
 // Everything the device persists about watering: zones, schedules, which one is
@@ -34,6 +36,10 @@ struct Config {
   int startHour = 7;  // local time the daily run starts (Phase 4)
   int startMinute = 0;
   std::string timezone = timekeeping::kPacificTz;  // POSIX TZ string
+  // UDP syslog sink (Phase 5). An IPv4 literal, not a hostname: a DNS lookup
+  // can block, and nothing on the log path may. Empty: no export.
+  std::string logHost;
+  int logPort = kDefaultLogPort;
 };
 
 struct Settings {
@@ -51,8 +57,13 @@ struct Settings {
 //   items: zone must be a configured zone, at most once per schedule,
 //          duration_minutes within hunter_limits.h
 //   active: empty or the name of a schedule
-//   config: 00:00-23:59, timezone 1-63 bytes
+//   config: 00:00-23:59, timezone 1-63 bytes, log_host empty or a dotted
+//           IPv4 address, log_port 1-65535
 bool validate(const Settings& s, std::string* error);
+
+// Dotted-quad IPv4 ("192.168.88.21"): four decimal parts, 0-255, no leading
+// zeros, nothing else.
+bool parseIpv4(const std::string& text, uint8_t out[4]);
 
 const Schedule* findSchedule(const Settings& s, const std::string& name);
 

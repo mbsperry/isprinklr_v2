@@ -1,9 +1,18 @@
 {
   "name": "sequencer",
-  "description": "Zone run queue and daily trigger. Pure; host-tested.",
+  "description": "Zone run queue, daily trigger, and the log lines they produce. Pure; host-tested.",
   "dependencies": [
-    {"name": "ArduinoJson"},
-    {"name": "settings"},
-    {"name": "timekeeping"}
+    {
+      "name": "ArduinoJson"
+    },
+    {
+      "name": "logging"
+    },
+    {
+      "name": "settings"
+    },
+    {
+      "name": "timekeeping"
+    }
   ]
 }

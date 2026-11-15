@@ -13,8 +13,10 @@
 #include "checkpoint.h"
 #include "config.h"
 #include "daily_trigger.h"
+#include "device_log.h"
 #include "hunter_bus.h"
 #include "nvs_kv_store.h"
+#include "run_log.h"
 #include "settings_service.h"
 #include "wallclock.h"
 #include "zone_api.h"
@@ -44,6 +46,21 @@ class Port : public seq::ZonePort {
 Port g_port;
 seq::Sequencer g_sequencer(g_port);
 
+// Sends the sequencer's events to the log. Called under the sequencer lock;
+// device_log::write only takes the log's own short lock and never waits on
+// the network.
+class RunLogger : public seq::EventListener {
+ public:
+  void onEvent(const seq::Event& e) override {
+    const run_log::Line line =
+        run_log::describe(e, g_sequencer.runName(), g_sequencer.entries());
+    device_log::write(line.level, "run", line.message.c_str());
+  }
+};
+
+RunLogger g_runLogger;
+run_log::TriggerReporter g_triggerReporter;
+
 long g_lastRunDay = -1;
 uint32_t g_lastTriggerCheckMs = 0;
 trigger::Decision g_lastDecision = trigger::Decision::kTimeInvalid;
@@ -64,7 +81,7 @@ void loadCheckpoint() {
   g_savedCheckpoint = text;
   recovery::Checkpoint c;
   if (!recovery::parse(text, &c)) {
-    Serial.println("[sched] checkpoint unreadable; ignoring it");
+    LOGW("sched", "checkpoint unreadable; ignoring it");
     g_recoveryResult = "checkpoint_unreadable";
     return;
   }
@@ -72,7 +89,7 @@ void loadCheckpoint() {
   g_bootCheckpoint = std::move(c);
   g_recoveryPending = true;
   g_recoveryResult = "waiting_for_time";
-  Serial.printf("[sched] interrupted run '%s' found; recovering once time is valid\n",
+  LOGI("sched", "interrupted run '%s' found; recovering once time is valid",
                 g_bootCheckpoint.runName.c_str());
 }
 
@@ -85,7 +102,7 @@ void saveCheckpointIfChanged(const seq::Sequencer& s, uint32_t epoch) {
   if (nvsStore().putBlob(kNamespace, kKeyCheckpoint, text)) {
     g_savedCheckpoint = text;
   } else {
-    Serial.println("[sched] could not persist checkpoint");
+    LOGW("sched", "could not persist checkpoint");
   }
 }
 
@@ -95,7 +112,7 @@ void applyRecovery(seq::Sequencer& s, uint32_t nowMs, uint32_t epoch) {
   if (!s.idle()) {
     // Something was queued by hand before the clock synced; that wins.
     g_recoveryResult = "superseded";
-    Serial.println("[sched] recovery skipped: a new run already started");
+    LOGW("sched", "recovery skipped: a new run already started");
     return;
   }
   const recovery::Plan p =
@@ -116,7 +133,12 @@ void applyRecovery(seq::Sequencer& s, uint32_t nowMs, uint32_t epoch) {
   } else if (p.action == recovery::Plan::Action::kSkip) {
     s.showInterrupted(g_bootCheckpoint.runName, g_bootCheckpoint.entries);
   }
-  Serial.printf("[sched] recovery: %s run '%s' (%u s late, running zone %u s left)\n",
+  // A skip means zones did not water today; worth more than an info line.
+  device_log::log(p.action == recovery::Plan::Action::kSkip
+                      ? device_log::Level::kWarn
+                      : device_log::Level::kInfo,
+                  "sched",
+                  "recovery: %s run '%s' (%u s late, running zone %u s left)",
                 g_recoveryResult, g_bootCheckpoint.runName.c_str(),
                 p.lateSeconds, p.runningRemainingMs / 1000);
 }
@@ -131,7 +153,7 @@ void loadLastRunDay() {
 void saveLastRunDay(long day) {
   g_lastRunDay = day;
   if (!nvsStore().putU32(kNamespace, kKeyLastRun, static_cast<uint32_t>(day + 1))) {
-    Serial.println("[sched] could not persist last-run day");
+    LOGW("sched", "could not persist last-run day");
   }
 }
 
@@ -148,6 +170,10 @@ void checkTrigger() {
         const settings::Settings& s = store.current();
         const trigger::Decision d =
             trigger::decide(timeValid, now, s, g_lastRunDay);
+        for (const run_log::Line& line :
+             g_triggerReporter.observe(d, timeValid, now, s)) {
+          device_log::write(line.level, "sched", line.message.c_str());
+        }
         if (d == trigger::Decision::kDue) {
           name = s.activeSchedule;
           for (const auto& run :
@@ -159,25 +185,21 @@ void checkTrigger() {
         return d;
       });
 
-  if (decision != g_lastDecision) {
-    Serial.printf("[sched] trigger: %s\n", trigger::toString(decision));
-    g_lastDecision = decision;
-  }
+  g_lastDecision = decision;
   if (decision != trigger::Decision::kDue) return;
 
   // Recorded first: a reboot from here on must not start today's run again.
   saveLastRunDay(trigger::localDay(now));
 
   if (entries.empty()) {
-    Serial.printf("[sched] '%s' has nothing to run today\n", name.c_str());
+    LOGI("sched", "'%s' has nothing to run today", name.c_str());
     return;
   }
 
-  const bool queued =
-      with([&](seq::Sequencer& s) { return s.addRun(name, entries); });
-  Serial.printf("[sched] '%s': %u zones %s\n", name.c_str(),
-                static_cast<unsigned>(entries.size()),
-                queued ? "queued" : "NOT queued (run full)");
+  // The sequencer logs the outcome (queued, or refused because the run is
+  // full) through RunLogger.
+  LOGI("sched", "starting today's scheduled run '%s'", name.c_str());
+  with([&](seq::Sequencer& s) { return s.addRun(name, entries); });
 }
 
 }  // namespace
@@ -190,9 +212,10 @@ void unlock() { xSemaphoreGive(g_mutex); }
 
 void begin() {
   g_mutex = xSemaphoreCreateMutex();
+  g_sequencer.setListener(&g_runLogger);
   loadLastRunDay();
   loadCheckpoint();
-  Serial.printf("[sched] last run day %ld\n", g_lastRunDay);
+  LOGI("sched", "last run day %ld", g_lastRunDay);
 }
 
 void tick() {
@@ -205,7 +228,7 @@ void tick() {
     const uint32_t before = s.revision();
     s.tick(nowMs, epoch);
     if (s.revision() != before) {
-      Serial.printf("[sched] %s\n", seq::toString(s.state()));
+      LOGD("sched", "%s", seq::toString(s.state()));
     }
     saveCheckpointIfChanged(s, epoch);
     return 0;

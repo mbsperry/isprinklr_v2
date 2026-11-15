@@ -87,8 +87,40 @@ bool validate(const Settings& s, std::string* error) {
     *error = "config: timezone must be 1-" + str(kMaxTimezoneLength) + " bytes";
     return false;
   }
+  uint8_t ip[4];
+  if (!c.logHost.empty() && !parseIpv4(c.logHost, ip)) {
+    *error = "config: log_host must be empty or an IPv4 address like 192.168.88.21";
+    return false;
+  }
+  if (c.logPort < 1 || c.logPort > 65535) {
+    *error = "config: log_port must be 1-65535";
+    return false;
+  }
 
   return true;
+}
+
+bool parseIpv4(const std::string& text, uint8_t out[4]) {
+  std::size_t pos = 0;
+  for (int part = 0; part < 4; ++part) {
+    if (part > 0) {
+      if (pos >= text.size() || text[pos] != '.') return false;
+      ++pos;
+    }
+    const std::size_t begin = pos;
+    int value = 0;
+    while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9' &&
+           pos - begin < 3) {
+      value = value * 10 + (text[pos] - '0');
+      ++pos;
+    }
+    const std::size_t digits = pos - begin;
+    if (digits == 0 || value > 255 || (digits > 1 && text[begin] == '0')) {
+      return false;
+    }
+    out[part] = static_cast<uint8_t>(value);
+  }
+  return pos == text.size();
 }
 
 const Schedule* findSchedule(const Settings& s, const std::string& name) {
