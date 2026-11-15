@@ -9,6 +9,7 @@
 
 #include "api_response.h"
 #include "sequencer.h"
+#include "settings.h"
 #include "zone_controller.h"
 
 // The HTTP-shaped half of zone control: request bodies in, status code and JSON
@@ -35,6 +36,20 @@ Response start(seq::Sequencer& sequencer, JsonVariantConst request);
 // Never refused for being busy.
 Response stop(seq::Sequencer& sequencer, JsonVariantConst request,
               uint32_t nowMs);
+
+// POST /api/schedule/run   {"name": "Catch up"}
+// Runs every zone in a saved schedule once, now, in schedule order, ignoring
+// its day patterns. Zones marked NONE are left out. Like a manual start, it
+// ignores the on/off flag and time_valid, and goes on the end of any run in
+// progress. 404 unknown schedule; 409 if every zone is NONE.
+Response runSchedule(seq::Sequencer& sequencer, const settings::Settings& s,
+                     JsonVariantConst request);
+
+// POST /api/run   {"items": [{"zone": 1, "duration_minutes": 20}, ...]}
+// An ad-hoc queue, run now, without saving a schedule. All items are
+// validated first; if any is bad, or the run would exceed its entry cap,
+// nothing is queued.
+Response runItems(seq::Sequencer& sequencer, JsonVariantConst request);
 
 // POST /api/run/skip    {}
 // Skips the zone the run is on (or about to start) and moves to the next.

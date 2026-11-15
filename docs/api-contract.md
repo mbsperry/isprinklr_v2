@@ -25,7 +25,8 @@ The frontend holds a base URL for each.
 | PUT | `/api/schedules` | Replace stored schedules. Validated before commit. *Implemented.* |
 | PUT | `/api/schedule/active` | Set the active schedule. *Implemented.* |
 | GET/PUT | `/api/schedule/enabled` | The on/off flag. *Implemented.* |
-| POST | `/api/schedule/run` | Run a schedule now. Not built yet. |
+| POST | `/api/schedule/run` | Run a saved schedule now. *Implemented (Phase 4).* |
+| POST | `/api/run` | Run an ad-hoc list of zones now. *Implemented (Phase 4).* |
 | GET | `/api/zones` | Zone numbers and names. *Implemented.* |
 | PUT | `/api/zones` | Replace the zone list. *Implemented.* |
 | GET | `/api/logs` | The RAM ring buffer. |
@@ -71,6 +72,22 @@ ignore the schedule on/off flag and `time_valid`.
   cancel too. Otherwise it is just a stop, which is how to stop a zone started
   at the Pro-C or before an ESP reboot.
 
+`POST /api/schedule/run` — `{"name": "Catch up"}`. Runs every zone in a saved
+schedule once, now, in schedule order, ignoring its day patterns. Zones marked
+`NONE` are left out. It returns 202
+`{"action": "run_schedule", "schedule": "Catch up", "zones": [1, 2, ...],
+"queued_behind": 0}`, 404 `unknown_schedule`, or 409 `nothing_to_run` (every
+zone is `NONE`).
+
+`POST /api/run` — `{"items": [{"zone": 1, "duration_minutes": 20}, ...]}`. An
+ad-hoc queue, run now, without saving a schedule. Every item is validated
+first. If any is bad (400 naming `items[i]`), or the run would pass 64 entries
+(503 `queue_full`), nothing is queued.
+
+Both behave like manual starts. They ignore the on/off flag and `time_valid`,
+join the end of any run in progress, and are cancelled or skipped the same
+way. Their entries have `origin: "manual"`.
+
 `POST /api/run/skip`, no body: stops the running zone, marks it `skipped`,
 and moves on to the next after the usual pad. Between zones it skips the one
 about to start. Returns 202 `{"action": "skip", "zone": N}`, or 409
@@ -79,7 +96,7 @@ about to start. Returns 202 `{"action": "skip", "zone": N}`, or 409
 | Status | Body | Meaning |
 |---|---|---|
 | 202 | `{"ok": true, "action": "start", "zone": 3, "duration_minutes": 10, "queued_behind": 0}` | Queued; starts within ~0.1 s if nothing is ahead of it. |
-| 202 | `{"ok": true, "action": "cancel" \| "stop", "zone": 3}` | Stop sent (retried if the bus is busy). |
+| 202 | `{"ok": true, "action": "cancel" \| "stop", "zone": 3}` | Stop sent (retried if the bus is busy). For a cancel between zones, `zone` is `null`. |
 | 400 | `{"ok": false, "error": "invalid_zone" \| "invalid_duration" \| "invalid_body", "message": "..."}` | Nothing sent. `message` names the bounds. |
 | 409 | `{"ok": false, "error": "no_active_zone", ...}` | `{}` stop with nothing running or queued. |
 | 503 | `{"ok": false, "error": "queue_full", ...}` | The run already holds 64 entries. Nothing changed. |

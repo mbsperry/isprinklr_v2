@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "hunter_limits.h"
 
@@ -109,13 +110,107 @@ Response stop(seq::Sequencer& sequencer, JsonVariantConst request,
   Response r{202, JsonDocument()};
   r.body["ok"] = true;
   r.body["action"] = "cancel";
-  if (current) {
+  // Only a zone actually running is reported; between zones the index
+  // already points at the next one, which never started.
+  if (current &&
+      sequencer.entries()[*current].outcome == seq::Outcome::kRunning) {
     r.body["zone"] = sequencer.entries()[*current].zone;
   } else {
     r.body["zone"] = nullptr;
   }
   sequencer.cancel(nowMs);
   return r;
+}
+
+namespace {
+
+std::size_t entriesAhead(const seq::Sequencer& sequencer) {
+  std::size_t ahead = 0;
+  for (const seq::Entry& e : sequencer.entries()) {
+    ahead += e.outcome == seq::Outcome::kPending ||
+             e.outcome == seq::Outcome::kRunning;
+  }
+  return ahead;
+}
+
+Response queued(const char* action, const std::string& name,
+                const std::vector<seq::Entry>& entries, std::size_t ahead) {
+  Response r{202, JsonDocument()};
+  r.body["ok"] = true;
+  r.body["action"] = action;
+  if (name.empty()) {
+    r.body["schedule"] = nullptr;
+  } else {
+    r.body["schedule"] = name;
+  }
+  JsonArray zones = r.body["zones"].to<JsonArray>();
+  for (const seq::Entry& e : entries) zones.add(e.zone);
+  r.body["queued_behind"] = ahead;
+  return r;
+}
+
+Response full() {
+  return error(503, "queue_full",
+               "the run would exceed " + std::to_string(seq::kMaxRunEntries) +
+                   " entries; nothing queued");
+}
+
+}  // namespace
+
+Response runSchedule(seq::Sequencer& sequencer, const settings::Settings& s,
+                     JsonVariantConst request) {
+  if (!request.is<JsonObjectConst>() || !request["name"].is<const char*>()) {
+    return error(400, "invalid_body", "expected {\"name\": \"<schedule>\"}");
+  }
+  const std::string name = request["name"].as<const char*>();
+  const settings::Schedule* schedule = settings::findSchedule(s, name);
+  if (schedule == nullptr) {
+    return error(404, "unknown_schedule", "no schedule named '" + name + "'");
+  }
+
+  std::vector<seq::Entry> entries;
+  for (const settings::ScheduleItem& item : schedule->items) {
+    if (item.days.kind == settings::DayPattern::Kind::kNone) continue;
+    entries.push_back(seq::Entry{item.zone, item.durationMinutes, seq::Origin::kManual});
+  }
+  if (entries.empty()) {
+    return error(409, "nothing_to_run",
+                 "every zone in '" + name + "' is NONE");
+  }
+
+  const std::size_t ahead = entriesAhead(sequencer);
+  if (!sequencer.addRun(name, entries, seq::Origin::kManual)) return full();
+  return queued("run_schedule", name, entries, ahead);
+}
+
+Response runItems(seq::Sequencer& sequencer, JsonVariantConst request) {
+  if (!request.is<JsonObjectConst>() || !request["items"].is<JsonArrayConst>()) {
+    return error(400, "invalid_body",
+                 "expected {\"items\": [{\"zone\": N, \"duration_minutes\": M}, ...]}");
+  }
+  std::vector<seq::Entry> entries;
+  std::size_t i = 0;
+  for (JsonVariantConst item : request["items"].as<JsonArrayConst>()) {
+    const std::string where = "items[" + std::to_string(i++) + "]: ";
+    long zone = 0, minutes = 0;
+    if (!item.is<JsonObjectConst>() || !readInt(item["zone"], &zone) ||
+        !hunter::isValidZone(zone)) {
+      return error(400, "invalid_zone", where + zoneMessage());
+    }
+    if (!readInt(item["duration_minutes"], &minutes) ||
+        !hunter::isValidRunMinutes(minutes)) {
+      return error(400, "invalid_duration", where + durationMessage());
+    }
+    entries.push_back(seq::Entry{static_cast<int>(zone), static_cast<int>(minutes),
+                                 seq::Origin::kManual});
+  }
+  if (entries.empty()) {
+    return error(400, "invalid_body", "items is empty");
+  }
+
+  const std::size_t ahead = entriesAhead(sequencer);
+  if (!sequencer.addRun("", entries, seq::Origin::kManual)) return full();
+  return queued("run", "", entries, ahead);
 }
 
 Response skip(seq::Sequencer& sequencer, uint32_t nowMs) {

@@ -50,6 +50,20 @@ with `ZoneController::adopt()`. On a repeat (manual zones 1 and 2, forced
 reboot 20 s in), status 24 s after boot showed `commanded_zone: 1` with 74 s
 left, recovery `resumed`, and 0 frames sent.
 
+## Run now
+
+- **Saved schedule.** `POST /api/schedule/run {"name": "Catch up"}` queued all
+  8 zones in schedule order with their own durations, and zone 1 started at
+  once. Skip moved it to padding. Cancel marked the rest `interrupted`.
+- **Ad-hoc list.** `POST /api/run` with zones 4 and 6 at 1 min each queued
+  both, and zone 4 started. A list with zone 60 in it returned 400 and queued
+  nothing. An unknown schedule name returned 404.
+- **Skip with a JSON body.** It reached the skip route, not the `/api/run`
+  JSON handler. Plain-string routes match their sub-paths, so registration
+  order matters.
+- **Cancel between zones.** It reported `zone: 2`, the next zone, which had
+  never started. It now reports `null`.
+
 ## Not covered on hardware
 
 - **The skip side of recovery** (back more than 60 minutes late). It's

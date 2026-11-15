@@ -71,8 +71,11 @@ class Sequencer {
   // full. Bounds are not checked here; callers validate first.
   bool add(int zone, int durationMinutes, Origin origin);
 
-  // A schedule run: its name is reported in status.
-  bool addRun(const std::string& scheduleName, const std::vector<Entry>& entries);
+  // A batch, all or nothing: false (and nothing added) if it does not fit.
+  // scheduleName, if set, is reported in status (first name wins when a run
+  // already in progress gets more entries). origin applies to every entry.
+  bool addRun(const std::string& scheduleName, const std::vector<Entry>& entries,
+              Origin origin = Origin::kSchedule);
 
   // Stops the running zone, marks it and everything queued interrupted, and
   // goes idle. Never refused; a stop the bus will not take is retried.

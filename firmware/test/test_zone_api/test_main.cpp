@@ -155,6 +155,18 @@ void test_stop_with_queued_but_not_started_cancels() {
   TEST_ASSERT_EQUAL_UINT(0, p.log.size());
 }
 
+void test_cancel_between_zones_reports_no_zone() {
+  FakePort p;
+  seq::Sequencer s(p);
+  zone_api::start(s, parse(R"({"zone":4,"duration_minutes":1})"));
+  zone_api::start(s, parse(R"({"zone":5,"duration_minutes":1})"));
+  s.tick(0, 0);
+  s.tick(60000, 0);  // zone 4 done, padding before 5
+  const auto r = zone_api::stop(s, parse("{}"), 60100);
+  TEST_ASSERT_EQUAL(202, r.status);
+  TEST_ASSERT_TRUE(r.body["zone"].isNull());
+}
+
 void test_stop_nothing_running_is_409() {
   FakePort p;
   seq::Sequencer s(p);
@@ -191,6 +203,87 @@ void test_skip() {
   TEST_ASSERT_EQUAL(202, r.status);
   TEST_ASSERT_EQUAL(4, r.body["zone"].as<int>());
   TEST_ASSERT_EQUAL_STRING("skipped", seq::toString(s.entries()[0].outcome));
+}
+
+namespace {
+
+settings::Settings sampleSettings() {
+  settings::Settings st;
+  for (int z = 1; z <= 3; ++z) st.zones.push_back({z, "Z" + std::to_string(z)});
+  settings::DayPattern none, sun, all;
+  std::string err;
+  settings::parseDayPattern("NONE", &none, &err);
+  settings::parseDayPattern("SU", &sun, &err);
+  settings::parseDayPattern("ALL", &all, &err);
+  st.schedules.push_back({"Catch up", {{3, sun, 30}, {1, none, 5}, {2, all, 20}}});
+  st.schedules.push_back({"Off", {{1, none, 5}}});
+  return st;
+}
+
+}  // namespace
+
+void test_run_schedule_now_skips_none_keeps_order() {
+  FakePort p;
+  seq::Sequencer s(p);
+  const auto r = zone_api::runSchedule(s, sampleSettings(), parse(R"({"name":"Catch up"})"));
+  TEST_ASSERT_EQUAL(202, r.status);
+  TEST_ASSERT_EQUAL_STRING("Catch up", str(r.body["schedule"]).c_str());
+  TEST_ASSERT_EQUAL_UINT(2, r.body["zones"].size());
+  TEST_ASSERT_EQUAL(3, r.body["zones"][0].as<int>());
+  TEST_ASSERT_EQUAL(2, r.body["zones"][1].as<int>());
+  TEST_ASSERT_EQUAL_STRING("manual", seq::toString(s.entries()[0].origin));
+  s.tick(0, 0);
+  TEST_ASSERT_EQUAL_STRING("start 3 30", p.log.at(0).c_str());
+}
+
+void test_run_schedule_errors() {
+  FakePort p;
+  seq::Sequencer s(p);
+  const auto st = sampleSettings();
+  TEST_ASSERT_EQUAL(404, zone_api::runSchedule(s, st, parse(R"({"name":"Nope"})")).status);
+  TEST_ASSERT_EQUAL(409, zone_api::runSchedule(s, st, parse(R"({"name":"Off"})")).status);
+  TEST_ASSERT_EQUAL(400, zone_api::runSchedule(s, st, parse(R"({"name":3})")).status);
+  TEST_ASSERT_EQUAL(400, zone_api::runSchedule(s, st, parse("{}")).status);
+  TEST_ASSERT_EQUAL_UINT(0, s.entries().size());
+}
+
+void test_run_items_queues_all_in_order() {
+  FakePort p;
+  seq::Sequencer s(p);
+  const auto r = zone_api::runItems(s, parse(
+      R"({"items":[{"zone":5,"duration_minutes":10},{"zone":1,"duration_minutes":15}]})"));
+  TEST_ASSERT_EQUAL(202, r.status);
+  TEST_ASSERT_TRUE(r.body["schedule"].isNull());
+  TEST_ASSERT_EQUAL_UINT(2, s.entries().size());
+  TEST_ASSERT_EQUAL(5, s.entries()[0].zone);
+  TEST_ASSERT_EQUAL(15, s.entries()[1].durationMinutes);
+}
+
+void test_run_items_all_or_nothing() {
+  FakePort p;
+  seq::Sequencer s(p);
+  const char* bad[] = {
+      R"({"items":[{"zone":5,"duration_minutes":10},{"zone":49,"duration_minutes":10}]})",
+      R"({"items":[{"zone":5,"duration_minutes":10},{"zone":2,"duration_minutes":0}]})",
+      R"({"items":[{"zone":5,"duration_minutes":10},{"zone":2}]})",
+      R"({"items":[5]})",
+      R"({"items":[]})",
+      R"({"zones":[1,2]})",
+  };
+  for (const char* b : bad) {
+    TEST_ASSERT_EQUAL_MESSAGE(400, zone_api::runItems(s, parse(b)).status, b);
+  }
+  TEST_ASSERT_EQUAL_UINT(0, s.entries().size());
+}
+
+void test_run_items_that_do_not_fit_queue_nothing() {
+  FakePort p;
+  seq::Sequencer s(p);
+  for (std::size_t i = 0; i + 1 < seq::kMaxRunEntries; ++i) s.add(1, 1, seq::Origin::kManual);
+  const auto r = zone_api::runItems(s, parse(
+      R"({"items":[{"zone":5,"duration_minutes":10},{"zone":1,"duration_minutes":15}]})"));
+  TEST_ASSERT_EQUAL(503, r.status);
+  TEST_ASSERT_EQUAL_UINT(seq::kMaxRunEntries - 1, s.entries().size());
 }
 
 void test_describe_idle_and_running() {
@@ -238,10 +331,16 @@ int main() {
   RUN_TEST(test_start_queue_full_is_503);
   RUN_TEST(test_stop_cancels_run);
   RUN_TEST(test_stop_with_queued_but_not_started_cancels);
+  RUN_TEST(test_cancel_between_zones_reports_no_zone);
   RUN_TEST(test_stop_nothing_running_is_409);
   RUN_TEST(test_stop_explicit_zone);
   RUN_TEST(test_stop_explicit_zone_invalid);
   RUN_TEST(test_skip);
+  RUN_TEST(test_run_schedule_now_skips_none_keeps_order);
+  RUN_TEST(test_run_schedule_errors);
+  RUN_TEST(test_run_items_queues_all_in_order);
+  RUN_TEST(test_run_items_all_or_nothing);
+  RUN_TEST(test_run_items_that_do_not_fit_queue_nothing);
   RUN_TEST(test_describe_idle_and_running);
   RUN_TEST(test_describe_run);
   return UNITY_END();

@@ -28,12 +28,12 @@ bool Sequencer::add(int zone, int durationMinutes, Origin origin) {
 }
 
 bool Sequencer::addRun(const std::string& scheduleName,
-                       const std::vector<Entry>& entries) {
+                       const std::vector<Entry>& entries, Origin origin) {
   beginRunIfIdle();
   if (entries_.size() + entries.size() > kMaxRunEntries) return false;
   if (runName_.empty()) runName_ = scheduleName;
   for (Entry e : entries) {
-    e.origin = Origin::kSchedule;
+    e.origin = origin;
     e.outcome = Outcome::kPending;
     e.startedEpoch = 0;
     entries_.push_back(e);

@@ -127,11 +127,18 @@ void sendJson(AsyncWebServerRequest* request, int status,
 
 // Route handlers only adapt between AsyncWebServer and zone_api, which holds
 // the validation and response shapes and is host-tested.
+// For routes that need settings: copied under the settings lock before the
+// sequencer lock is taken, so the two are never held together. Only the async
+// web task touches it.
+settings::Settings g_settingsSnapshot;
+
 void addZoneRoute(const char* path,
                   zone_api::Response (*handler)(seq::Sequencer&,
-                                                JsonVariantConst, uint32_t)) {
+                                                JsonVariantConst, uint32_t),
+                  bool needsSettings = false) {
   auto* h = new AsyncCallbackJsonWebHandler(
-      path, [handler](AsyncWebServerRequest* request, JsonVariant& json) {
+      path, [handler, needsSettings](AsyncWebServerRequest* request,
+                                     JsonVariant& json) {
         // An accepted update reboots shortly; a zone frame queued now could
         // be cut off mid-bit. Refuse rather than start something we may not
         // finish sending.
@@ -140,6 +147,10 @@ void addZoneRoute(const char* path,
                         "{\"ok\":false,\"error\":\"update_in_progress\","
                         "\"message\":\"firmware update in progress; retry after reboot\"}");
           return;
+        }
+        if (needsSettings) {
+          g_settingsSnapshot = settings_service::with(
+              [](SettingsStore& st) { return st.current(); });
         }
         const uint32_t nowMs = millis();
         const zone_api::Response r = sequencer_service::with(
@@ -155,6 +166,16 @@ void addZoneRoute(const char* path,
 zone_api::Response startZone(seq::Sequencer& s, JsonVariantConst body,
                              uint32_t) {
   return zone_api::start(s, body);
+}
+
+zone_api::Response runItems(seq::Sequencer& s, JsonVariantConst body,
+                            uint32_t) {
+  return zone_api::runItems(s, body);
+}
+
+zone_api::Response runScheduleNow(seq::Sequencer& s, JsonVariantConst body,
+                                  uint32_t) {
+  return zone_api::runSchedule(s, g_settingsSnapshot, body);
 }
 
 void addSettingsGet(const char* path,
@@ -191,7 +212,8 @@ void applyConfig(const SettingsStore& store) {
 }
 
 bool isJsonOnlyPath(const String& url) {
-  return url.startsWith("/api/zone/") || url == "/api/schedules" ||
+  return url.startsWith("/api/zone/") || url == "/api/run" ||
+         url == "/api/schedules" ||
          url.startsWith("/api/schedule/") || url == "/api/zones" ||
          url == "/api/config";
 }
@@ -327,6 +349,13 @@ void begin() {
     Serial.printf("[web] /api/run/skip -> %d\n", r.status);
     sendJson(request, r.status, r.body);
   });
+
+  // Run a saved schedule now, or an ad-hoc list. Both go through the
+  // sequencer like manual starts; neither touches stored settings.
+  // Registered after /api/run/skip: a plain-string route also matches its
+  // sub-paths, so the more specific one must come first.
+  addZoneRoute("/api/schedule/run", runScheduleNow, /*needsSettings=*/true);
+  addZoneRoute("/api/run", runItems);
 
   addSettingsGet("/api/schedules", settings_api::getSchedules);
   addSettingsPut("/api/schedules", settings_api::putSchedules);
