@@ -166,6 +166,21 @@ Pro-C display, commands sent from the Mac. 10 zones installed.
 | 7b. Zone vs OTA | Upload sent while a start frame was going out: 503 `busy`, nothing flashed. |
 | 8. ESP power loss mid-run | Started zone 1 for 2 min, then unplugged the PoE cable. The Pro-C kept running zone 1 and went idle on its own. The ESP came back with `reset_reason: power_on`, healthy, `commanded_zone: null`, and `frames_sent: 0`, so it sent nothing at boot. |
 
+**Pro-C behaviour when the ESP loses power (observed by Matt, 2026-11-15).**
+The Pro-C's watering icon blinks steadily while a zone runs with the ESP
+powered. With the ESP unplugged mid-run, it blinks irregularly. On plugging the
+ESP back in, the Pro-C briefly showed `ERR`, went back to blinking steadily, and
+finished the zone normally. Not understood yet. A likely explanation: the REM pin
+is wired straight to GPIO 18 with no resistor. Unpowered, the ESP stops holding
+the line LOW and its protection diodes load it, so the Pro-C sees an undriven,
+noisy REM line. At power-up the boot transient on the pin reaches the Pro-C as
+an invalid frame, so it shows `ERR` and ignores it, which is the outcome we
+wanted. Nothing was misread as a command. **Repeat step 8 in spring with the
+water on**, and watch that the valve really closes on time. If the irregular
+blink ever matters, a series resistor (around 1 kΩ) between GPIO 18 and REM would
+limit current into an unpowered pin. That needs testing against the Pro-C before
+it's fitted.
+
 **Frame stretch under network load.** Frames sent while a firmware upload was
 streaming in took 778–804 ms instead of ~646 ms. Frames at other times were
 646–647 ms. The stretch has to fall outside the interrupts-off bit pairs: in the
