@@ -153,10 +153,18 @@ bus task does the slow part.
 
 ## Phase 5 — Logging
 
+Done 2026-11-15 as `0.6.0-phase5`; hardware test in
+[`hardware-test-phase5.md`](hardware-test-phase5.md).
+
 - RAM ring buffer, ~200 lines, exposed over HTTP. No flash writes. Works when the
   network does not.
 - UDP syslog export, fire-and-forget.
-- Minimal status page from LittleFS as the fallback UI.
+- Minimal status page as the fallback UI. Compiled into the firmware rather than
+  served from LittleFS: one page did not justify a filesystem image with its own
+  upload path, and it cannot drift from the firmware's API.
+- The server's UDP sink and SQLite log store (decision 3) were pulled forward
+  from Phase 6 so the export could be tested end to end. Static hosting and
+  schedule backup remain Phase 6.
 
 ## Phase 6 — Server and frontend
 

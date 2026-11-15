@@ -3,8 +3,9 @@
 **Status: partly implemented.** `/api/status`, `/api/zone/start`,
 `/api/zone/stop`, and `/api/update` exist as of Phase 1, and the `time` fields
 of `/api/status` as of Phase 2, and the schedule, zone and config endpoints as
-of Phase 3, and the run endpoints and status fields as of Phase 4; their shapes below are
-the implemented ones. The rest is the shape to design against, and this file
+of Phase 3, and the run endpoints and status fields as of Phase 4, and the
+logging endpoints of both hosts as of Phase 5; their shapes below are the
+implemented ones. The rest is the shape to design against, and this file
 should change with the firmware.
 
 Two hosts, not one:
@@ -29,8 +30,9 @@ The frontend holds a base URL for each.
 | POST | `/api/run` | Run an ad-hoc list of zones now. *Implemented (Phase 4).* |
 | GET | `/api/zones` | Zone numbers and names. *Implemented.* |
 | PUT | `/api/zones` | Replace the zone list. *Implemented.* |
-| GET | `/api/logs` | The RAM ring buffer. |
-| GET/PUT | `/api/config` | Device config: schedule time, timezone. *Implemented.* Log sink address comes with Phase 5. |
+| GET | `/api/logs` | The RAM ring buffer. *Implemented (Phase 5).* |
+| GET/PUT | `/api/config` | Device config: schedule time, timezone, log sink. *Implemented.* |
+| GET | `/` | Fallback status page, compiled into the firmware. *Implemented (Phase 5).* |
 | POST | `/api/update` | Firmware upload (OTA). *Implemented.* Refused while a run is in progress. |
 | POST | `/api/run/skip` | Skip the zone the run is on. *Implemented (Phase 4).* |
 | POST | `/api/restart` | Reboot. *Implemented (Phase 4).* 409 during a run unless `?force=1`. |
@@ -197,7 +199,8 @@ PUT /api/schedules   {"schedules": [{"name": "Fall", "items": [
 PUT /api/schedule/active   {"name": "Fall"}      null clears it
 PUT /api/schedule/enabled  {"enabled": true}
 PUT /api/config      {"start_hour": 7, "start_minute": 0,
-                      "timezone": "PST8PDT,M3.2.0,M11.1.0"}
+                      "timezone": "PST8PDT,M3.2.0,M11.1.0",
+                      "log_host": "192.168.88.21", "log_port": 5514}
 ```
 
 GETs return the same shapes, plus `"ok": true` and `settings_hash`.
@@ -212,6 +215,12 @@ Rules, from `firmware/lib/settings/src/settings.cpp`:
 - **Active:** must name an existing schedule. A PUT that would delete the
   active schedule, or remove a zone a schedule uses, is refused.
 - **Config:** start time 00:00–23:59; timezone is a POSIX TZ string, 1–63 bytes.
+  `log_host` is empty (export off) or a dotted IPv4 address; `log_port` is
+  1–65535, default 5514. `start_hour`, `start_minute` and `timezone` are
+  required in a PUT; `log_host` and `log_port` are optional and keep their
+  current values when left out. A change takes effect at
+  once, with no reboot. With export off and the default port, they do not
+  affect `settings_hash`, so a device that never set them hashes as before.
 - **Size:** the stored document is capped at 4 KB (413 `too_large`). It is
   stored compactly, so the real data (5 schedules × 8 zones) takes under 1 KB.
 
@@ -232,17 +241,92 @@ defaults (nothing configured, disabled) until a successful write. `today` lists
 what the active schedule runs on today's local date, and appears only while
 `time_valid`.
 
+### Logs (implemented)
+
+The device keeps its last 200 log lines in RAM. It never writes logs to flash,
+and the ring works whether or not the network is up.
+
+```
+GET /api/logs?since=<seq>&level=<error|warn|info|debug>&limit=<1-200>
+```
+
+All parameters are optional: `since` defaults to 0 (everything in the ring),
+`level` to `debug` (all lines; `warn` means warn and error), `limit` to 200.
+
+```json
+{"ok": true, "capacity": 200, "oldest_seq": 12, "last_seq": 211, "missed": 0,
+ "entries": [{"seq": 12, "uptime_ms": 81234, "time": "2026-11-15T22:40:20Z",
+              "level": "info", "module": "run",
+              "message": "zone 1 started for 1 min (manual, 1 of 3)"}]}
+```
+
+`seq` counts lines since boot. `time` is UTC, or null for lines logged before
+the clock was valid. `missed` counts lines after `since` that were already
+overwritten. To follow the log, pass the last `seq` you saw as `since`.
+Malformed parameters get 400 `invalid_query`.
+
+Modules: `main`, `boot`, `net`, `time`, `settings`, `sched`, `run`, `hunter`,
+`web`, `ota`, `log`. Run lines (`run`) say what was queued, each zone's start, how it
+ended (ran its full time, cut short by skip or cancel, failed), and whether it
+was scheduled or manual. Once a day at the start time, `sched` says why a
+scheduled run did not start, for example when the scheduler is off. Refused
+requests log at `warn` with their reason.
+
+**UDP export.** When `log_host` is set, a low-priority task sends every line,
+including the backlog still in the ring, as RFC 5424 syslog over UDP
+(facility local0, MSGID is the module). It never waits on
+the network and never retries: a line sent while nobody is listening is gone
+from the server but still in the ring. The structured data carries the boot id,
+`seq` and `uptime_ms`, so the server can spot gaps and place lines that had no
+time.
+
+`/api/status` adds:
+
+```json
+"logs": {"capacity": 200, "last_seq": 54, "sink": "192.168.88.21:5514",
+         "sent": 52, "send_errors": 0, "lost": 0, "boot_id": "c72c4971"}
+```
+
+`sink` is null when export is off. `lost` counts lines overwritten in the ring
+before the export task could send them; lines logged while export was off are
+not counted.
+
 ## Node service
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/logs` | Log history, filterable by level, module, and time range. |
+| GET | `/api/logs` | Log history, filterable by level, module, and time range. *Implemented (Phase 5).* |
+| GET | `/api/health` | Row count and UDP sink counters. *Implemented (Phase 5).* |
 | GET | `/api/backups` | Available schedule backups. |
 | GET | `/api/backups/:timestamp` | One backup, for restoring by hand. |
 | — | (static) | The built frontend. |
 
 Inbound from the ESP: UDP syslog. Not an HTTP endpoint, deliberately — see
 `architecture.md`.
+
+```
+GET /api/logs?level=warn&module=run,sched&since=2026-11-01&until=...&limit=500&before_id=<id>
+```
+
+All optional. `level` is the least severe level to include. `module` takes a
+comma list or repeats. `since` (inclusive) and `until` (exclusive) take ISO 8601
+or epoch milliseconds. `limit` is 1–5000, default 500. Results are newest first; when
+there are more, `next_before_id` is set, and passing it as `before_id` gets the
+next page.
+
+```json
+{"ok": true, "next_before_id": null,
+ "entries": [{"id": 52, "time": "2026-11-15T23:39:19.000Z",
+              "time_source": "device", "received": "2026-11-15T23:39:19.012Z",
+              "level": "debug", "module": "hunter",
+              "message": "...", "host": "192.168.88.54", "boot": "c72c4971",
+              "seq": 52, "uptime_ms": 2766354}]}
+```
+
+`time_source` is `device` (the ESP's clock), `estimated` (a line from before
+the ESP's clock was valid, placed by its uptime once a timed line from the same
+boot arrived), or `received` (the server's clock, when neither was possible).
+Rows older than 12 months are deleted nightly at 03:30 local time.
 
 ## Day patterns
 
