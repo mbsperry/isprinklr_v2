@@ -32,14 +32,19 @@ were checked directly. That obliges the firmware to be GPLv3 or later, and
 one license for the whole repo is simpler than per-directory ones.
 The frontend's v1 MIT license was a template leftover and isn't carried over.
 
-## 3. Log retention and storage format
+## 3. Log retention and storage format — decided 2026-11-15
 
-**Blocks:** Phase 5/6 server work.
+**SQLite, 12 months, pruned nightly** (Matt, 2026-11-15). The Node server
+stores log lines in one SQLite table (time, level, module, message), indexed
+for the level, module and time-range filters the frontend needs. A nightly job
+deletes rows older than 12 months. This applies only to the server: the ESP
+keeps its RAM ring buffer and writes no logs to flash.
 
-How long to keep logs, and in what form. v1 used a 1 MB rotating file with
-line-based filtering by module, level, and date range. Flat files are simple and
-greppable; SQLite makes filtering cheaper and the query code smaller. Volume is
-tiny either way.
+Why: filtering becomes a query rather than hand-written line parsing, as v1
+needed with its 1 MB rotating file, and a year of history covers the full
+watering season required before v1 is decommissioned. Volume is tiny (about
+50 MB a year even at 1,000 lines a day), so neither size nor flash wear
+decides it. If the server ends up on an SD card, batch inserts.
 
 ## 4. Frontend: how much to keep
 
@@ -105,6 +110,7 @@ Recorded so they do not get relitigated.
 | Board memory type | `qio_opi` — confirmed on hardware, 8 MB PSRAM visible |
 | Device address | 192.168.88.54, static reservation on the router |
 | Reboot mid-run | Resume within 60 minutes of when the next zone was due, else skip (decision 1) |
+| Server log storage | SQLite, 12 months, nightly prune (decision 3) |
 | Commands during a run | One queue; manual appends; cancel and skip; manual not gated (decision 6) |
 | `EO` day pattern | Strict alternation by days since 1970-01-01; not v1's day-of-year parity (2026-11-15) |
 | Settings storage | One compact NVS document, 4 KB cap, all-or-nothing writes, FNV-1a `settings_hash` |
