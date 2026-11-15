@@ -8,8 +8,8 @@
 
 namespace config {
 
-// Hunter Pro-C SmartPort / REM line. Declared here so the pin map lives in one
-// place; Phase 0 does not drive it.
+// Hunter Pro-C SmartPort / REM line. Same pin as v1. Zone and duration bounds
+// live in lib/hunter/src/hunter_limits.h, not here.
 constexpr int kSmartPortPin = 18;
 
 // W5500 Ethernet, SPI3. Fixed by the Waveshare ESP32-S3-ETH layout.
@@ -33,5 +33,10 @@ constexpr uint32_t kMaxFailedBoots = 3;
 // Grace period between answering an OTA request and rebooting, so the HTTP
 // response actually reaches the client.
 constexpr uint32_t kRestartDelayMs = 1500;
+
+// An upload that has sent nothing for this long is treated as abandoned (client
+// dropped mid-upload): it stops blocking zone commands, and the next upload
+// aborts it before starting.
+constexpr uint32_t kUploadStallMs = 30000;
 
 }  // namespace config

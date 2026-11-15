@@ -4,11 +4,23 @@ ESP32-S3 firmware. PlatformIO project.
 
 **Phase 0 is installed (2026-11-14)** at 192.168.88.54. Ship changes over the
 network with the [routine OTA update](../docs/phase0-runbook.md#routine-ota-update);
-CI builds both envs on every firmware change.
+CI runs the host tests and builds both device envs on every firmware change.
 
-Phase 0 scope: network bring-up, a status endpoint, firmware upload over HTTP, and
-a boot guard that reverts to the previous OTA slot after three unhealthy boots.
-No zone control, no timekeeping, no schedule storage — those ship over OTA.
+**Phase 1** adds the Hunter SmartPort driver, manual zone start/stop over HTTP,
+and host unit tests. It has not been run against the Pro-C yet; see
+[`hardware-test-phase1.md`](../docs/hardware-test-phase1.md). No timekeeping or
+schedule storage yet; those ship over OTA in Phases 2 and 3.
+
+## Layout rule
+
+`lib/` is pure C++ with no Arduino dependency: frame building, pulse encoding,
+validation, decisions. `src/` is the I/O edges: pins, NVS, network, the web
+server. Host tests in `test/` link `lib/` only, so anything worth testing goes
+in `lib/`.
+
+```
+pio test -e native
+```
 
 ## Target
 
@@ -25,13 +37,13 @@ is vendored in `boards/`.
 Because GPIO 9 is the W5500 reset, the Arduino default I²C pins (8/9) are not
 usable as-is; any I²C peripheral needs remapping.
 
-## Planned environments
+## Environments
 
 | Env | Purpose |
 |---|---|
 | `ethernet` | Default build. Wired. |
 | `wifi` | Fallback build. |
-| `native` | Host unit tests (Unity). Phase 1; not present yet. |
+| `native` | Host unit tests (Unity). Builds `lib/` and `test/` only. |
 
 ## Toolchain
 
@@ -52,11 +64,18 @@ clangd.
 
 | Path | Purpose |
 |---|---|
-| `platformio.ini` | Pinned platform, two device envs, partition table selection |
+| `platformio.ini` | Pinned platform, two device envs plus `native`, partition table |
 | `partitions_ota.csv` | Dual 4 MB app slots, NVS, 7 MB LittleFS, coredump |
 | `boards/` | Vendored board definition — no upstream equivalent exists |
 | `include/config.h` | Pin map, timeouts, boot-guard threshold |
+| `lib/hunter/` | Zone/duration bounds, SmartPort frame builder, pulse encoder |
+| `lib/zone_control/` | Zone command logic and the HTTP-shaped request/response layer |
+| `lib/kv_store/` | Storage interface, plus the in-memory fake for tests |
+| `lib/boot_counter/` | Boot-guard decision logic |
+| `src/hunter_bus.cpp` | REM pin and the FreeRTOS task that plays frames onto it |
+| `src/nvs_kv_store.cpp` | `KvStore` on NVS, behind a mutex |
 | `src/net.cpp` | Ethernet or WiFi bring-up, selected at compile time |
-| `src/boot_guard.cpp` | NVS boot counter and OTA slot revert |
-| `src/web.cpp` | `GET /api/status`, `POST /api/update` |
+| `src/boot_guard.cpp` | OTA slot revert, driven by `BootCounter` |
+| `src/web.cpp` | Routes: status, zone start/stop, firmware upload |
 | `src/main.cpp` | Startup order and the link-check loop |
+| `test/` | Unity host tests, one directory per suite |

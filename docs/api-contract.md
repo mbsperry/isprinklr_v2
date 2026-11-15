@@ -1,8 +1,9 @@
 # API contract
 
-**Status: proposed.** Nothing here is implemented. This is the shape to design
-against; it will change as the firmware is built, and this file should change with
-it.
+**Status: partly implemented.** `/api/status`, `/api/zone/start`,
+`/api/zone/stop`, and `/api/update` exist as of Phase 1; their shapes below are
+the implemented ones. The rest is the shape to design against, and this file
+should change with the firmware.
 
 Two hosts, not one:
 
@@ -16,8 +17,8 @@ The frontend holds a base URL for each.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/status` | System state: active zone, time validity, current schedule, schedule version, uptime, reset reason, network, heap. |
-| POST | `/api/zone/start` | Start one zone for a bounded duration. |
-| POST | `/api/zone/stop` | Stop the active zone. |
+| POST | `/api/zone/start` | Start one zone for a bounded duration. *Implemented.* |
+| POST | `/api/zone/stop` | Stop the active zone, or a named one. *Implemented.* |
 | GET | `/api/schedules` | All stored schedules plus the active name. |
 | PUT | `/api/schedules` | Replace stored schedules. Validated before commit. |
 | PUT | `/api/schedule/active` | Set the active schedule. |
@@ -27,7 +28,7 @@ The frontend holds a base URL for each.
 | PUT | `/api/zones` | Update zone names. |
 | GET | `/api/logs` | The RAM ring buffer. |
 | GET/PUT | `/api/config` | Device config: schedule time, timezone, log sink address. |
-| POST | `/api/update` | Firmware upload (OTA). |
+| POST | `/api/update` | Firmware upload (OTA). *Implemented.* |
 
 Notes:
 
@@ -43,6 +44,50 @@ Notes:
   tests. The SmartPort protocol accepts zones 1–48 and 0–240 minutes; v1's
   firmware separately capped zones at 1–20 and minutes at 0–120, and the API
   capped durations at 7200 seconds. Three different limits for the same thing.
+
+### Zone control (implemented)
+
+Both endpoints take `Content-Type: application/json`; anything else gets 415.
+Bounds come from `firmware/lib/hunter/src/hunter_limits.h`: zones 1–48,
+`duration_minutes` 1–240. Values must be JSON integers; strings, floats
+(including `10.0`), booleans and null are rejected, never coerced.
+
+`POST /api/zone/start` — `{"zone": 3, "duration_minutes": 10}`
+
+`POST /api/zone/stop` — `{}` stops the zone this device last started, if its run
+has not elapsed. `{"zone": 3}` stops that zone whether or not the device thinks
+it is running, which is how to stop a run that outlived an ESP reboot.
+
+| Status | Body | Meaning |
+|---|---|---|
+| 202 | `{"ok": true, "action": "start", "zone": 3, "duration_minutes": 10}` | Frame queued for the bus. Sent within about a second. |
+| 400 | `{"ok": false, "error": "invalid_zone" \| "invalid_duration" \| "invalid_body", "message": "..."}` | Nothing sent. `message` names the bounds. |
+| 409 | `{"ok": false, "error": "no_active_zone", ...}` | Stop with no zone given and nothing known to be running. |
+| 503 | `{"ok": false, "error": "bus_busy", ...}` | Bus queue full (4 frames, ~0.65 s each). Nothing changed; retry. |
+| 503 | `{"ok": false, "error": "update_in_progress", ...}` | A firmware upload is running or the device is about to reboot into one. Nothing sent. |
+
+Zone commands and firmware updates exclude each other so a reboot can never
+cut a frame mid-bit. `POST /api/update` returns 503 `"error": "busy"` (nothing
+flashed) if a frame is on the wire or queued, or another upload is live. An
+upload that sends nothing for 30 s counts as abandoned: it stops blocking zone
+commands, and the next upload aborts it.
+
+202, not 200: the bus write takes about 0.65 s and happens on its own task after
+the response. The SmartPort line is write-only, so there is no acknowledgement
+from the Pro-C to wait for anyway.
+
+`GET /api/status` gains:
+
+```json
+"zones": {"commanded_zone": 3, "duration_minutes": 10, "remaining_seconds": 412},
+"hunter_bus": {"pin": 18, "ready": true, "busy": false, "queued": 0,
+               "frames_sent": 4, "frames_dropped": 0,
+               "last_sent_ago_ms": 9120, "last_frame_us": 645310}
+```
+
+`commanded_zone` is `null` when idle. It is what this device last commanded and
+has not yet timed out, not a reading from the Pro-C: a run started at the Pro-C
+itself, or one from before a reboot, does not appear.
 
 ## Node service
 
