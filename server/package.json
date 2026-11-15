@@ -1,0 +1,15 @@
+{
+  "name": "isprinklr-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iSprinklr v2 server: UDP log sink with SQLite history. Observational only.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/"
+  }
+}

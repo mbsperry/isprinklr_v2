@@ -7,6 +7,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+#include "device_log.h"
 #include "nvs_kv_store.h"
 
 namespace settings_service {
@@ -28,14 +29,14 @@ void begin() {
   g_mutex = xSemaphoreCreateMutex();
   with([](SettingsStore& s) {
     const SettingsStore::LoadState state = s.load();
-    Serial.printf("[settings] %s, hash %s, %u zones, %u schedules, active '%s', %s\n",
+    LOGI("settings", "%s, hash %s, %u zones, %u schedules, active '%s', %s",
                   toString(state), s.hash().c_str(),
                   static_cast<unsigned>(s.current().zones.size()),
                   static_cast<unsigned>(s.current().schedules.size()),
                   s.current().activeSchedule.c_str(),
                   s.current().enabled ? "enabled" : "disabled");
     if (state == SettingsStore::LoadState::kCorrupt) {
-      Serial.printf("[settings] stored document rejected: %s\n",
+      LOGE("settings", "stored document rejected: %s",
                     s.loadError().c_str());
     }
     return 0;

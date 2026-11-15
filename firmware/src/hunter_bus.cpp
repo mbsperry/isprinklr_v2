@@ -16,6 +16,7 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
+#include "device_log.h"
 #include "hunter_pulses.h"
 
 namespace hunter_bus {
@@ -98,7 +99,7 @@ void busTask(void*) {
     ++g_sent;
     g_busy = false;
 
-    Serial.printf("[hunter] frame sent, %u bytes, %lld us (nominal %u us)\n",
+    LOGD("hunter", "frame sent, %u bytes, %lld us (nominal %u us)",
                   static_cast<unsigned>(frame.length), elapsed,
                   static_cast<unsigned>(train.totalUs()));
   }
@@ -124,19 +125,19 @@ void begin(int pin) {
 
   g_queue = xQueueCreate(kQueueDepth, sizeof(hunter::Frame));
   if (g_queue == nullptr) {
-    Serial.println("[hunter] queue allocation failed; bus disabled");
+    LOGE("hunter", "queue allocation failed; bus disabled");
     return;
   }
 
   if (xTaskCreatePinnedToCore(busTask, "hunter_bus", kTaskStackBytes, nullptr,
                               kTaskPriority, nullptr, kTaskCore) != pdPASS) {
-    Serial.println("[hunter] task creation failed; bus disabled");
+    LOGE("hunter", "task creation failed; bus disabled");
     vQueueDelete(g_queue);
     g_queue = nullptr;
     return;
   }
 
-  Serial.printf("[hunter] bus ready on GPIO %d\n", g_pin);
+  LOGI("hunter", "bus ready on GPIO %d", g_pin);
 }
 
 bool enqueue(const hunter::Frame& frame) {

@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "config.h"
+#include "device_log.h"
 #include "timekeeping.h"
 
 namespace wallclock {
@@ -31,7 +32,7 @@ void onSync(struct timeval*) {
   const uint32_t n = ++g_syncCount;
   if (n == 1) {
     const time_t now = time(nullptr);
-    Serial.printf("[time] first sync: %s\n",
+    LOGI("time", "first sync: %s",
                   timekeeping::formatLocalIso8601(timekeeping::toLocal(now))
                       .c_str());
   }
@@ -48,7 +49,7 @@ void begin(const std::string& timezone) {
   configTzTime(g_timezone.c_str(), config::kNtpServers[0],
                config::kNtpServers[1], config::kNtpServers[2]);
 
-  Serial.printf("[time] SNTP started: %s, %s, %s; TZ %s\n",
+  LOGI("time", "SNTP started: %s, %s, %s; TZ %s",
                 config::kNtpServers[0], config::kNtpServers[1],
                 config::kNtpServers[2], g_timezone.c_str());
 }
@@ -57,7 +58,7 @@ void setTimezone(const std::string& timezone) {
   if (timezone == g_timezone) return;
   g_timezone = timezone;
   timekeeping::applyTimezone(g_timezone.c_str());
-  Serial.printf("[time] timezone now %s\n", g_timezone.c_str());
+  LOGI("time", "timezone now %s", g_timezone.c_str());
 }
 
 bool localNow(timekeeping::LocalTime* out) {

@@ -13,6 +13,9 @@ constexpr std::size_t kMaxSchedules = 10;
 constexpr std::size_t kMaxNameLength = 32;  // schedule and zone names, bytes
 constexpr std::size_t kMaxTimezoneLength = 63;
 
+// UDP syslog. Not 514: the server need not run as root to receive it.
+constexpr int kDefaultLogPort = 5514;
+
 // Serialized settings document cap. The NVS partition is 20 KB (5 pages, one
 // kept free for garbage collection), and NVS writes a new blob before erasing
 // the old, so the document must fit twice with room to spare. The stored form

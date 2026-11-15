@@ -51,6 +51,38 @@ class ZonePort {
   virtual bool stop(int zone) = 0;
 };
 
+// What happened, for the log. The sequencer reports each change once, as it
+// happens; run_log.h turns these into log lines.
+struct Event {
+  enum class Kind : uint8_t {
+    kQueued,         // entries added to the run (count, origin, ahead)
+    kQueueFull,      // entries refused: the run is at kMaxRunEntries (count)
+    kStartRetry,     // the bus was busy; will retry (entry, attempts)
+    kZoneStarted,    // (entry, index, total, attempts)
+    kZoneEnded,      // completed, skipped, interrupted or failed (entry, ranMs)
+    kStopAbandoned,  // a stop was never taken by the bus (zone)
+    kRunEnded,       // the run is over (reason, dropped)
+  };
+  enum class RunEnd : uint8_t { kFinished, kCancelled, kFailed };
+
+  Kind kind = Kind::kQueued;
+  Entry entry{0, 0, Origin::kManual};
+  std::size_t index = 0;     // the entry's position in the run, from 0
+  std::size_t total = 0;     // entries in the run
+  uint32_t ranMs = 0;        // kZoneEnded: how long it had run; 0 if never
+  uint32_t attempts = 0;     // start attempts so far
+  std::size_t count = 0;     // kQueued, kQueueFull: entries offered
+  std::size_t ahead = 0;     // kQueued: entries still to run before them
+  std::size_t dropped = 0;   // kRunEnded: queued entries that never started
+  RunEnd runEnd = RunEnd::kFinished;
+};
+
+class EventListener {
+ public:
+  virtual ~EventListener() = default;
+  virtual void onEvent(const Event& event) = 0;
+};
+
 struct Timing {
   uint32_t padMs = 5000;    // between stop(A) and start(B)
   uint32_t retryMs = 1000;  // between attempts when the bus is busy
@@ -66,6 +98,10 @@ class Sequencer {
   enum class State : uint8_t { kIdle, kStarting, kRunning, kPadding };
 
   explicit Sequencer(ZonePort& port, Timing timing = Timing());
+
+  // Optional. Called synchronously from whichever method made the change, so
+  // it runs under the device's sequencer lock and must not block.
+  void setListener(EventListener* listener) { listener_ = listener; }
 
   // Appends to the queue. Starts on the next tick if idle. False if the run is
   // full. Bounds are not checked here; callers validate first.
@@ -135,9 +171,14 @@ class Sequencer {
   void advance(uint32_t nowMs);
   void interruptRemaining();
   void retryPendingStop(uint32_t nowMs);
+  void emit(const Event& e) const;
+  Event zoneEvent(Event::Kind kind) const;
+  void endRun(Event::RunEnd how, std::size_t dropped);
+  std::size_t unfinished() const;
 
   ZonePort& port_;
   Timing timing_;
+  EventListener* listener_ = nullptr;
   State state_ = State::kIdle;
   std::vector<Entry> entries_;
   std::string runName_;

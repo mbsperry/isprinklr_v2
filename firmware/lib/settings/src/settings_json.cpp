@@ -124,13 +124,24 @@ bool parseConfig(JsonVariantConst object, Config* out, std::string* error) {
     return false;
   }
   long hour, minute;
-  Config c;
+  // Starts from the current config, so the optional fields keep their values
+  // when a request leaves them out.
+  Config c = *out;
   if (!readInt(object["start_hour"], "start_hour", "", &hour, error)) return false;
   if (!readInt(object["start_minute"], "start_minute", "", &minute, error)) {
     return false;
   }
   if (!readString(object["timezone"], "timezone", "", &c.timezone, error)) {
     return false;
+  }
+  if (!object["log_host"].isNull() &&
+      !readString(object["log_host"], "log_host", "", &c.logHost, error)) {
+    return false;
+  }
+  if (!object["log_port"].isNull()) {
+    long port;
+    if (!readInt(object["log_port"], "log_port", "", &port, error)) return false;
+    c.logPort = clampInt(port);
   }
   c.startHour = clampInt(hour);
   c.startMinute = clampInt(minute);
@@ -164,6 +175,8 @@ void writeConfig(const Config& config, JsonObject out) {
   out["start_hour"] = config.startHour;
   out["start_minute"] = config.startMinute;
   out["timezone"] = config.timezone;
+  out["log_host"] = config.logHost;
+  out["log_port"] = config.logPort;
 }
 
 // Storage format: compact arrays instead of the API's keyed objects, about a
@@ -171,6 +184,8 @@ void writeConfig(const Config& config, JsonObject out) {
 //   {"f":2,"z":[[1,"Walkway Beds"],...],
 //    "s":[["Fall",[[1,"TU:F",30],...]],...],
 //    "a":"Fall","e":false,"c":[7,0,"PST8PDT,M3.2.0,M11.1.0"]}
+// The log sink is appended to "c" ([...,"192.168.88.21",5514]) only when it is
+// set, so a document written before Phase 5 serializes, and hashes, the same.
 std::string serializeDocument(const Settings& s) {
   JsonDocument doc;
   doc["f"] = kFormatVersion;
@@ -198,6 +213,10 @@ std::string serializeDocument(const Settings& s) {
   c.add(s.config.startHour);
   c.add(s.config.startMinute);
   c.add(s.config.timezone);
+  if (!s.config.logHost.empty() || s.config.logPort != kDefaultLogPort) {
+    c.add(s.config.logHost);
+    c.add(s.config.logPort);
+  }
   std::string out;
   serializeJson(doc, out);
   return out;
@@ -253,6 +272,11 @@ bool parseDocument(const std::string& text, Settings* out, std::string* error) {
   s.config.startHour = c[0].as<int>();
   s.config.startMinute = c[1].as<int>();
   s.config.timezone = c[2].as<const char*>();
+  if (c.size() > 3) {
+    if (!c[3].is<const char*>() || !c[4].is<int>()) return fail("config");
+    s.config.logHost = c[3].as<const char*>();
+    s.config.logPort = c[4].as<int>();
+  }
 
   if (!validate(s, error)) return false;
   *out = std::move(s);

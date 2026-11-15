@@ -1,0 +1,9 @@
+{
+  "name": "logging",
+  "description": "RAM log ring, syslog line format, /api/logs shape. Pure; host-tested.",
+  "dependencies": [
+    {"name": "ArduinoJson"},
+    {"name": "api"},
+    {"name": "timekeeping"}
+  ]
+}

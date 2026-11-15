@@ -12,6 +12,9 @@
 
 #include "boot_guard.h"
 #include "config.h"
+#include "device_log.h"
+#include "logs_api.h"
+#include "status_page.h"
 #include "hunter_bus.h"
 #include "net.h"
 #include "sequencer_service.h"
@@ -70,7 +73,7 @@ void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
 
   doc["firmware_version"] = FW_VERSION;
-  doc["phase"] = "4";
+  doc["phase"] = "5";
   doc["uptime_ms"] = millis();
   doc["reset_reason"] = resetReasonName(esp_reset_reason());
 
@@ -95,6 +98,9 @@ void handleStatus(AsyncWebServerRequest* request) {
 
   JsonObject bus = doc["hunter_bus"].to<JsonObject>();
   hunter_bus::describe(bus);
+
+  JsonObject logs = doc["logs"].to<JsonObject>();
+  device_log::describe(logs);
 
   JsonObject boot = doc["boot"].to<JsonObject>();
   boot_guard::describe(boot);
@@ -125,6 +131,20 @@ void sendJson(AsyncWebServerRequest* request, int status,
   request->send(status, "application/json", out);
 }
 
+// Every refused request is logged with its reason, so the log says why a
+// start did not happen, not just that it returned 4xx.
+void logResult(AsyncWebServerRequest* request, const JsonDocument& body,
+               int status) {
+  if (status >= 400) {
+    LOGW("web", "%s %s refused, %d %s: %s", request->methodToString(),
+         request->url().c_str(), status, body["error"] | "",
+         body["message"] | "");
+  } else {
+    LOGI("web", "%s %s -> %d", request->methodToString(),
+         request->url().c_str(), status);
+  }
+}
+
 // Route handlers only adapt between AsyncWebServer and zone_api, which holds
 // the validation and response shapes and is host-tested.
 // For routes that need settings: copied under the settings lock before the
@@ -143,6 +163,8 @@ void addZoneRoute(const char* path,
         // be cut off mid-bit. Refuse rather than start something we may not
         // finish sending.
         if (updateActive() || g_restartAt != 0) {
+          LOGW("web", "%s refused, 503 update_in_progress",
+               request->url().c_str());
           request->send(503, "application/json",
                         "{\"ok\":false,\"error\":\"update_in_progress\","
                         "\"message\":\"firmware update in progress; retry after reboot\"}");
@@ -155,7 +177,7 @@ void addZoneRoute(const char* path,
         const uint32_t nowMs = millis();
         const zone_api::Response r = sequencer_service::with(
             [&](seq::Sequencer& s) { return handler(s, json, nowMs); });
-        Serial.printf("[web] %s -> %d\n", request->url().c_str(), r.status);
+        logResult(request, r.body, r.status);
         sendJson(request, r.status, r.body);
       });
   h->setMethod(HTTP_POST);
@@ -199,7 +221,7 @@ void addSettingsPut(const char* path,
               if (result.status == 200 && after != nullptr) after(store);
               return result;
             });
-        Serial.printf("[web] PUT %s -> %d\n", request->url().c_str(), r.status);
+        logResult(request, r.body, r.status);
         sendJson(request, r.status, r.body);
       });
   h->setMethod(HTTP_PUT);
@@ -208,7 +230,26 @@ void addSettingsPut(const char* path,
 }
 
 void applyConfig(const SettingsStore& store) {
-  wallclock::setTimezone(store.current().config.timezone);
+  const settings::Config& c = store.current().config;
+  wallclock::setTimezone(c.timezone);
+  device_log::setSink(c.logHost, c.logPort);
+}
+
+// GET /api/logs?since=&level=&limit=  (shape in lib/logging/src/logs_api.h)
+void handleLogs(AsyncWebServerRequest* request) {
+  const auto param = [request](const char* name) -> const char* {
+    const AsyncWebParameter* p = request->getParam(name);
+    return p != nullptr ? p->value().c_str() : nullptr;
+  };
+  logs_api::Query q;
+  api::Response bad{0, JsonDocument()};
+  if (!logs_api::parseQuery(param("since"), param("level"), param("limit"), &q,
+                            &bad)) {
+    sendJson(request, bad.status, bad.body);
+    return;
+  }
+  const api::Response r = logs_api::render(device_log::snapshot(q));
+  sendJson(request, r.status, r.body);
 }
 
 bool isJsonOnlyPath(const String& url) {
@@ -271,18 +312,18 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
     g_uploadRejected = !hunter_bus::idle() || updateActive() ||
                        !sequencer_service::idle();
     if (g_uploadRejected) {
-      Serial.println("[ota] refused: run in progress, bus busy, or another upload");
+      LOGW("ota", "refused: run in progress, bus busy, or another upload");
       return;
     }
 
     if (Update.isRunning()) {
-      Serial.println("[ota] aborting stalled previous upload");
+      LOGW("ota", "aborting stalled previous upload");
       Update.abort();
     }
 
-    Serial.printf("[ota] receiving %s\n", filename.c_str());
+    LOGI("ota", "receiving %s", filename.c_str());
     if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-      Serial.printf("[ota] begin failed: %s\n", Update.errorString());
+      LOGE("ota", "begin failed: %s", Update.errorString());
       return;
     }
   }
@@ -294,7 +335,7 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
   // firmware untouched — the boot partition only moves after Update.end(true)
   // verifies the image.
   if (len > 0 && Update.write(data, len) != len) {
-    Serial.printf("[ota] write failed: %s\n", Update.errorString());
+    LOGE("ota", "write failed: %s", Update.errorString());
     Update.abort();
     return;
   }
@@ -302,10 +343,10 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
   if (final) {
     if (index + len > 0 && Update.end(true)) {
       g_uploadSucceeded = true;
-      Serial.printf("[ota] complete, %u bytes\n",
+      LOGI("ota", "complete, %u bytes",
                     static_cast<unsigned>(index + len));
     } else {
-      Serial.printf("[ota] end failed: %s\n", Update.errorString());
+      LOGE("ota", "end failed: %s", Update.errorString());
       // Release it now rather than leave zone commands blocked until the
       // stall timeout.
       if (Update.isRunning()) Update.abort();
@@ -317,6 +358,12 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
 
 void begin() {
   server.on("/api/status", HTTP_GET, handleStatus);
+  server.on("/api/logs", HTTP_GET, handleLogs);
+
+  // The fallback UI: one self-contained page, compiled into the firmware.
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/html; charset=utf-8", status_page::kHtml);
+  });
 
   // curl -H "Content-Type: application/json" -d '{"zone":3,"duration_minutes":2}' http://<ip>/api/zone/start
   addZoneRoute("/api/zone/start", startZone);
@@ -333,7 +380,7 @@ void begin() {
                     "\"message\":\"a run is in progress; cancel it or add ?force=1\"}");
       return;
     }
-    Serial.printf("[web] restart requested%s\n", force ? " (forced)" : "");
+    LOGW("web", "restart requested%s", force ? " (forced)" : "");
     AsyncWebServerResponse* response = request->beginResponse(
         200, "application/json", "{\"ok\":true,\"message\":\"restarting\"}");
     response->addHeader("Connection", "close");
@@ -346,7 +393,7 @@ void begin() {
     const uint32_t nowMs = millis();
     const zone_api::Response r = sequencer_service::with(
         [nowMs](seq::Sequencer& s) { return zone_api::skip(s, nowMs); });
-    Serial.printf("[web] /api/run/skip -> %d\n", r.status);
+    logResult(request, r.body, r.status);
     sendJson(request, r.status, r.body);
   });
 
@@ -383,7 +430,7 @@ void begin() {
   });
 
   server.begin();
-  Serial.println("[web] listening on :80");
+  LOGI("web", "listening on :80");
 }
 
 void tick() {
@@ -391,7 +438,7 @@ void tick() {
   // zone routes are refused from then on, so this should already hold; the
   // check is the backstop.
   if (g_restartAt != 0 && millis() >= g_restartAt && hunter_bus::idle()) {
-    Serial.println("[ota] restarting into new image");
+    LOGI("ota", "restarting into new image");
     Serial.flush();
     esp_restart();
   }
