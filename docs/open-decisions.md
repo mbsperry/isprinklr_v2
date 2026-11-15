@@ -59,6 +59,29 @@ Copying v1 files in loses their `git log`. `git subtree add --prefix=<dir>`
 preserves it at the cost of a messier history. For a declared rewrite, copying is
 probably fine, with the v1 repos kept as archives.
 
+## 6. Commands during a schedule run
+
+**Blocks:** Phase 4.
+
+Direction from Matt (2026-11-15): a schedule run is a queue. Cancelling a run is
+required. Adding a zone to a running queue is wanted if it stays cheap.
+
+Proposed shape, not yet built:
+
+- The sequencer owns one bounded queue of `{zone, duration_minutes, origin}`,
+  capped at 48 entries. A schedule run fills it.
+- A manual start during a run appends to the end of the queue instead of
+  preempting it.
+- **Cancel** sends stop for the running zone, clears the queue, and marks the
+  remaining zones interrupted in status. Cancel is never refused.
+- **Skip** (optional) stops the running zone and advances.
+- The Phase 4 checkpoint stores the remaining queue entries rather than
+  `{schedule, zone_index}`, so the queue survives a reboot under whatever policy
+  decision 1 settles on.
+
+Background and the rest of the ESPHome comparison:
+[`esphome-sprinkler-lessons.md`](esphome-sprinkler-lessons.md).
+
 ---
 
 ## Settled
