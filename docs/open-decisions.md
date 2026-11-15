@@ -66,6 +66,11 @@ probably fine, with the v1 repos kept as archives.
 Direction from Matt (2026-11-15): a schedule run is a queue. Cancelling a run is
 required. Adding a zone to a running queue is wanted if it stays cheap.
 
+Hardware fact (Phase 1 test, 2026-11-15): **the Pro-C does not queue.** A start
+for zone B while zone A is running replaces A immediately. So any queue has to
+live on the ESP, and a manual start during a run must go through the sequencer,
+never straight to the bus, or it silently cuts the running zone short.
+
 Proposed shape, not yet built:
 
 - The sequencer owns one bounded queue of `{zone, duration_minutes, origin}`,
