@@ -3,6 +3,7 @@
 
 #include "zone_api.h"
 
+#include <optional>
 #include <string>
 
 #include "hunter_limits.h"
@@ -11,17 +12,6 @@ namespace zone_api {
 namespace {
 
 using api::error;
-
-int statusFor(ZoneController::Result result) {
-  switch (result) {
-    case ZoneController::Result::kOk: return 202;
-    case ZoneController::Result::kInvalidZone:
-    case ZoneController::Result::kInvalidDuration: return 400;
-    case ZoneController::Result::kNoActiveZone: return 409;
-    case ZoneController::Result::kBusBusy: return 503;
-  }
-  return 500;
-}
 
 // Strict: the field must be a JSON integer. Strings, floats (including 10.0),
 // booleans and null are rejected rather than coerced.
@@ -44,8 +34,7 @@ std::string durationMessage() {
 
 }  // namespace
 
-Response start(ZoneController& zones, JsonVariantConst request,
-               uint32_t nowMs) {
+Response start(seq::Sequencer& sequencer, JsonVariantConst request) {
   if (!request.is<JsonObjectConst>()) {
     return error(400, "invalid_body", "expected a JSON object");
   }
@@ -61,11 +50,20 @@ Response start(ZoneController& zones, JsonVariantConst request,
     return error(400, "invalid_duration", durationMessage());
   }
 
-  const auto result =
-      zones.start(static_cast<int>(zone), static_cast<int>(minutes), nowMs);
-  if (result != ZoneController::Result::kOk) {
-    return error(statusFor(result), toString(result),
-                 "command not sent; nothing changed");
+  // A finished run holds only completed/interrupted/failed entries, so this
+  // is 0 when idle.
+  std::size_t ahead = 0;
+  for (const seq::Entry& e : sequencer.entries()) {
+    ahead += e.outcome == seq::Outcome::kPending ||
+             e.outcome == seq::Outcome::kRunning;
+  }
+
+  if (!sequencer.add(static_cast<int>(zone), static_cast<int>(minutes),
+                     seq::Origin::kManual)) {
+    return error(503, "queue_full",
+                 "the run already holds " +
+                     std::to_string(seq::kMaxRunEntries) +
+                     " entries; nothing changed");
   }
 
   Response r{202, JsonDocument()};
@@ -73,45 +71,68 @@ Response start(ZoneController& zones, JsonVariantConst request,
   r.body["action"] = "start";
   r.body["zone"] = zone;
   r.body["duration_minutes"] = minutes;
+  r.body["queued_behind"] = ahead;
   return r;
 }
 
-Response stop(ZoneController& zones, JsonVariantConst request,
+Response stop(seq::Sequencer& sequencer, JsonVariantConst request,
               uint32_t nowMs) {
   if (!request.is<JsonObjectConst>()) {
     return error(400, "invalid_body", "expected a JSON object; {} is fine");
   }
 
-  std::optional<int> zone;
   JsonVariantConst zoneField = request["zone"];
   if (!zoneField.isNull()) {
     long z = 0;
     if (!readInt(zoneField, &z) || !hunter::isValidZone(z)) {
       return error(400, "invalid_zone", zoneMessage());
     }
-    zone = static_cast<int>(z);
+    sequencer.stopZone(static_cast<int>(z), nowMs);
+    Response r{202, JsonDocument()};
+    r.body["ok"] = true;
+    r.body["action"] = "stop";
+    r.body["zone"] = z;
+    return r;
   }
 
-  // Resolved here, before stop() clears the record, for the response body.
-  std::optional<int> target = zone;
-  if (!target) {
-    if (const auto current = zones.active(nowMs)) target = current->zone;
+  const auto current = sequencer.currentIndex();
+  bool queued = false;
+  for (const seq::Entry& e : sequencer.entries()) {
+    queued |= e.outcome == seq::Outcome::kPending;
   }
-
-  const auto result = zones.stop(zone, nowMs);
-  if (result == ZoneController::Result::kNoActiveZone) {
-    return error(409, toString(result),
-                 "no zone is known to be running; pass {\"zone\": N}");
-  }
-  if (result != ZoneController::Result::kOk) {
-    return error(statusFor(result), toString(result),
-                 "command not sent; nothing changed");
+  if (!current && !queued) {
+    return error(409, "no_active_zone",
+                 "nothing is running or queued; pass {\"zone\": N} to stop "
+                 "a zone started elsewhere");
   }
 
   Response r{202, JsonDocument()};
   r.body["ok"] = true;
-  r.body["action"] = "stop";
-  r.body["zone"] = *target;
+  r.body["action"] = "cancel";
+  if (current) {
+    r.body["zone"] = sequencer.entries()[*current].zone;
+  } else {
+    r.body["zone"] = nullptr;
+  }
+  sequencer.cancel(nowMs);
+  return r;
+}
+
+Response skip(seq::Sequencer& sequencer, uint32_t nowMs) {
+  const auto current = sequencer.currentIndex();
+  std::optional<int> zone;
+  if (current) zone = sequencer.entries()[*current].zone;
+  if (!sequencer.skip(nowMs)) {
+    return error(409, "nothing_to_skip", "nothing is running or queued");
+  }
+  Response r{202, JsonDocument()};
+  r.body["ok"] = true;
+  r.body["action"] = "skip";
+  if (zone) {
+    r.body["zone"] = *zone;
+  } else {
+    r.body["zone"] = nullptr;
+  }
   return r;
 }
 
@@ -125,6 +146,34 @@ void describe(const ZoneController& zones, uint32_t nowMs, JsonObject out) {
   out["commanded_zone"] = run->zone;
   out["duration_minutes"] = run->durationMinutes;
   out["remaining_seconds"] = (zones.remainingMs(nowMs) + 999) / 1000;
+}
+
+void describeRun(const seq::Sequencer& sequencer, uint32_t nowMs,
+                 JsonObject out) {
+  out["state"] = seq::toString(sequencer.state());
+  if (sequencer.runName().empty()) {
+    out["schedule"] = nullptr;
+  } else {
+    out["schedule"] = sequencer.runName();
+  }
+  const auto current = sequencer.currentIndex();
+  if (current) {
+    out["current_index"] = *current;
+  } else {
+    out["current_index"] = nullptr;
+  }
+  if (sequencer.state() == seq::Sequencer::State::kRunning) {
+    out["remaining_seconds"] = (sequencer.currentRemainingMs(nowMs) + 999) / 1000;
+  }
+  JsonArray entries = out["entries"].to<JsonArray>();
+  for (const seq::Entry& e : sequencer.entries()) {
+    JsonObject o = entries.add<JsonObject>();
+    o["zone"] = e.zone;
+    o["duration_minutes"] = e.durationMinutes;
+    o["origin"] = seq::toString(e.origin);
+    o["outcome"] = seq::toString(e.outcome);
+    if (e.startedEpoch != 0) o["started_epoch"] = e.startedEpoch;
+  }
 }
 
 }  // namespace zone_api

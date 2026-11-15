@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Matt Sperry
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #pragma once
 
 // The installed system's v1 zones and schedules as of 2026-11-15, read from the v1 API and

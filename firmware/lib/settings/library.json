@@ -1,0 +1,11 @@
+{
+  "name": "settings",
+  "description": "Stored zones, schedules and config. Pure; host-tested.",
+  "dependencies": [
+    {"name": "ArduinoJson"},
+    {"name": "api"},
+    {"name": "hunter"},
+    {"name": "kv_store"},
+    {"name": "timekeeping"}
+  ]
+}

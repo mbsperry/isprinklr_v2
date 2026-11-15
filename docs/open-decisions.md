@@ -4,22 +4,20 @@ Things deliberately left unsettled. Each notes what blocks on it.
 
 ---
 
-## 1. Reboot-mid-sequence policy
+## 1. Reboot-mid-sequence policy — decided 2026-11-15
 
-**Blocks:** Phase 4.
+**Resume within a 60-minute window** (Matt, 2026-11-15). After a reboot
+mid-run, once the clock is valid, the remaining zones run only if the ESP is
+back within 60 minutes of when the next zone was due. Otherwise they are
+skipped until the next scheduled day. The zone that was running is never
+restarted: the Pro-C finishes it on its own, and the sequencer waits out its
+remaining time before moving on. Either way the interrupted run shows in
+status, entry by entry (`run`, `recovery`).
 
-If the ESP reboots partway through a watering cycle, the running zone still closes
-(the Pro-C holds the timer), but the remaining zones are pending. What should
-happen?
-
-- **Resume** the remaining zones. Risk: after a two-hour outage, watering restarts
-  in full sun.
-- **Skip** to the next scheduled day. Risk: zones silently get no water.
-- **Resume within a window** — resume only if the interruption was shorter than
-  some threshold, else skip. More code, needs a threshold.
-
-There is no safe default, which is why it is here rather than decided. A partial
-cycle should be visible in logs and status regardless of which is chosen.
+The window is `config::kRecoveryWindowSeconds`. The logic is
+`firmware/lib/sequencer/src/checkpoint.cpp`, host-tested in
+`test/test_recovery`. Firmware uploads and `/api/restart` are refused while a
+run is in progress, so in practice this covers crashes and power cuts.
 
 ## 2. License — decided 2026-11-15
 
@@ -60,33 +58,24 @@ Copying v1 files in loses their `git log`. `git subtree add --prefix=<dir>`
 preserves it at the cost of a messier history. For a declared rewrite, copying is
 probably fine, with the v1 repos kept as archives.
 
-## 6. Commands during a schedule run
+## 6. Commands during a schedule run — decided 2026-11-15
 
-**Blocks:** Phase 4.
+Built in Phase 4 as proposed (Matt, 2026-11-15):
 
-Direction from Matt (2026-11-15): a schedule run is a queue. Cancelling a run is
-required. Adding a zone to a running queue is wanted if it stays cheap.
-
-Hardware fact (Phase 1 test, 2026-11-15): **the Pro-C does not queue.** A start
-for zone B while zone A is running replaces A immediately. So any queue has to
-live on the ESP, and a manual start during a run must go through the sequencer,
-never straight to the bus, or it silently cuts the running zone short.
-
-Proposed shape, not yet built:
-
-- The sequencer owns one bounded queue of `{zone, duration_minutes, origin}`,
-  capped at 48 entries. A schedule run fills it.
-- A manual start during a run appends to the end of the queue instead of
-  preempting it.
-- **Cancel** sends stop for the running zone, clears the queue, and marks the
-  remaining zones interrupted in status. Cancel is never refused.
-- **Skip** (optional) stops the running zone and advances.
-- The Phase 4 checkpoint stores the remaining queue entries rather than
-  `{schedule, zone_index}`, so the queue survives a reboot under whatever policy
-  decision 1 settles on.
-
-Background and the rest of the ESPHome comparison:
-[`esphome-sprinkler-lessons.md`](esphome-sprinkler-lessons.md).
+- **One queue.** The sequencer owns a single queue (64 entries per run). A
+  schedule run fills it, and a manual start goes on the end instead of
+  preempting.
+- **Cancel.** `POST /api/zone/stop {}` stops the running zone and drops the
+  rest, marking them interrupted. It is never refused.
+- **Skip** (Matt asked for it). `POST /api/run/skip` stops the running zone,
+  marks it skipped, and moves on after the usual pad.
+- **Manual starts are not gated.** They ignore the schedule on/off flag and
+  `time_valid`.
+- **Stop before start.** Between zones the sequencer always sends stop(A),
+  waits 5 s, then start(B). The Pro-C would replace A anyway (hardware test
+  step 6), but the sequence doesn't rely on it.
+- **Checkpoint.** It stores the run's entries with their outcomes, not
+  `{schedule, zone_index}`.
 
 ---
 
@@ -115,6 +104,8 @@ Recorded so they do not get relitigated.
 | Platform | pioarduino `55.03.311` (Arduino-ESP32 3.3.11); official registry 7.1.3 is Arduino 2.x |
 | Board memory type | `qio_opi` — confirmed on hardware, 8 MB PSRAM visible |
 | Device address | 192.168.88.54, static reservation on the router |
+| Reboot mid-run | Resume within 60 minutes of when the next zone was due, else skip (decision 1) |
+| Commands during a run | One queue; manual appends; cancel and skip; manual not gated (decision 6) |
 | `EO` day pattern | Strict alternation by days since 1970-01-01; not v1's day-of-year parity (2026-11-15) |
 | Settings storage | One compact NVS document, 4 KB cap, all-or-nothing writes, FNV-1a `settings_hash` |
 | Deploy path | `POST /api/update` over the LAN; USB only for recovery |

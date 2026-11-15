@@ -1,0 +1,9 @@
+{
+  "name": "sequencer",
+  "description": "Zone run queue and daily trigger. Pure; host-tested.",
+  "dependencies": [
+    {"name": "ArduinoJson"},
+    {"name": "settings"},
+    {"name": "timekeeping"}
+  ]
+}
