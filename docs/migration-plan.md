@@ -117,6 +117,8 @@ at which the device becomes self-sufficient.
 - Checkpoint `{schedule, zone_index, started_epoch, expected_end}` at each
   transition. On boot: read reset reason → sync time → reconcile.
 - Reconciliation policy is an open decision — see `open-decisions.md`.
+- Queue semantics (cancel, add during a run) are open decision 6. Design notes
+  from the ESPHome comparison: [`esphome-sprinkler-lessons.md`](esphome-sprinkler-lessons.md).
 
 ## Phase 5 — Logging
 
