@@ -21,17 +21,18 @@ happen?
 There is no safe default, which is why it is here rather than decided. A partial
 cycle should be visible in logs and status regardless of which is chosen.
 
-## 2. License
+## 2. License — decided 2026-11-15
 
-**Blocks:** nothing immediately; should be settled before the repo goes public-facing.
+**Decision:** the whole repository is GPL-3.0-or-later (LICENSE, NOTICE, SPDX
+headers on every source file).
 
-The v1 repos disagree: firmware is GPL-3.0, frontend is MIT (and the MIT header
-reads "Copyright (c) 2022 GitHub" — a leftover from the Codespaces template, not a
-deliberate choice).
-
-The GPL is probably load-bearing for the firmware: the Hunter SmartPort
-implementation derives from GPL-licensed work by several authors. A monorepo can
-carry per-directory licenses if a single one is unattractive.
+The Hunter SmartPort driver derives from HunterRoam
+([ecodina/hunter-wifi](https://github.com/ecodina/hunter-wifi), GPL-3.0-or-later),
+which derives from [seb821/OpenSprinkler-Firmware-Hunter](https://github.com/seb821/OpenSprinkler-Firmware-Hunter)
+(GPLv3, with "or any later version" in its source headers). Both LICENSE files
+were checked directly. That obliges the firmware to be GPLv3 or later, and
+one license for the whole repo is simpler than per-directory ones.
+The frontend's v1 MIT license was a template leftover and isn't carried over.
 
 ## 3. Log retention and storage format
 
