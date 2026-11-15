@@ -1,35 +1,18 @@
 #include "boot_guard.h"
 
-#include <Preferences.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 
+#include "boot_counter.h"
 #include "config.h"
+#include "nvs_kv_store.h"
 
 namespace boot_guard {
 namespace {
 
-constexpr char kNamespace[] = "bootguard";
-constexpr char kKeyFails[] = "fails";
-
-Preferences prefs;
-uint32_t g_failedBoots = 0;
-bool g_healthy = false;
-
-uint32_t readFails() {
-  if (!prefs.begin(kNamespace, /*readOnly=*/true)) return 0;
-  const uint32_t n = prefs.getUInt(kKeyFails, 0);
-  prefs.end();
-  return n;
-}
-
-void writeFails(uint32_t n) {
-  if (!prefs.begin(kNamespace, /*readOnly=*/false)) {
-    Serial.println("[boot] NVS open failed; boot guard inactive");
-    return;
-  }
-  prefs.putUInt(kKeyFails, n);
-  prefs.end();
+BootCounter& counter() {
+  static BootCounter c(nvsStore(), config::kMaxFailedBoots);
+  return c;
 }
 
 // Switches the boot partition to the inactive OTA slot. Returns false if there
@@ -62,35 +45,29 @@ bool revertToOtherSlot() {
 }  // namespace
 
 void begin() {
-  const uint32_t previous = readFails();
-  g_failedBoots = previous;
+  const BootCounter::Decision decision = counter().onBoot();
+  if (counter().storeFailed()) {
+    Serial.println("[boot] NVS write failed; boot guard cannot count");
+  }
 
-  if (previous >= config::kMaxFailedBoots) {
-    Serial.printf("[boot] %u consecutive unhealthy boots\n", previous);
-
-    // Clear before restarting either way: if the revert works the new image gets
-    // a clean slate, and if it does not, we must not loop on this branch forever.
-    writeFails(0);
-
+  if (decision == BootCounter::Decision::kRevert) {
+    Serial.printf("[boot] %u consecutive unhealthy boots\n",
+                  config::kMaxFailedBoots);
     if (revertToOtherSlot()) {
       delay(100);
       esp_restart();
     }
-
     Serial.println("[boot] cannot revert; continuing on current image");
-    g_failedBoots = 0;
     return;
   }
 
-  writeFails(previous + 1);
-  Serial.printf("[boot] attempt %u of %u before revert\n", previous + 1,
-                config::kMaxFailedBoots);
+  Serial.printf("[boot] attempt %u of %u before revert\n",
+                counter().failedBoots() + 1, config::kMaxFailedBoots);
 }
 
 void markHealthy() {
-  if (g_healthy) return;
-  g_healthy = true;
-  writeFails(0);
+  if (counter().healthy()) return;
+  counter().markHealthy();
 
   // Harmless when IDF has already auto-confirmed at startup, and correct if a
   // future build ever switches to app-controlled confirmation.
@@ -99,14 +76,15 @@ void markHealthy() {
   Serial.println("[boot] marked healthy");
 }
 
-uint32_t failedBoots() { return g_failedBoots; }
+uint32_t failedBoots() { return counter().failedBoots(); }
 
-bool isHealthy() { return g_healthy; }
+bool isHealthy() { return counter().healthy(); }
 
 void describe(JsonObject obj) {
-  obj["healthy"] = g_healthy;
-  obj["failed_boots"] = g_failedBoots;
+  obj["healthy"] = counter().healthy();
+  obj["failed_boots"] = counter().failedBoots();
   obj["max_failed_boots"] = config::kMaxFailedBoots;
+  obj["store_failed"] = counter().storeFailed();
 
   const esp_partition_t* running = esp_ota_get_running_partition();
   if (running != nullptr) obj["running_partition"] = running->label;

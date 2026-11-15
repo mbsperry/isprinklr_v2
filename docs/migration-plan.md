@@ -61,6 +61,12 @@ Arduino framework does not allow.
 Built alongside the migration, not after. The seams it needs are the seams the
 migration needs anyway.
 
+**Implemented, host-tested, not yet run on hardware.** See
+[`hardware-test-phase1.md`](hardware-test-phase1.md) for the first test against
+the Pro-C. Beyond the list below, Phase 1 also added the zone start/stop
+endpoints (needed to exercise the driver at all) and moved the bus write onto
+its own FreeRTOS task, which the plan had deferred to Phase 4.
+
 - `[env:native]` with Unity. `lib_compat_mode = off` to override a `strict`
   setting inherited from `[env]`.
 - Split frame construction from I/O in the Hunter driver: a pure

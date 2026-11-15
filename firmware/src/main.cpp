@@ -1,33 +1,39 @@
-// iSprinklr v2 — Phase 0
+// iSprinklr v2 — Phase 1
 //
-// Scope: get on the network, report status, accept firmware over HTTP, and
-// recover from a bad update without a USB cable. Everything else (timekeeping,
-// schedules in NVS, zone sequencing, log export) ships over OTA afterwards.
-//
-// The device is wired to a Hunter Pro-C but does not drive it in this phase.
+// Network, status, OTA, boot guard (Phase 0), plus manual zone control over the
+// Hunter SmartPort line. Timekeeping, schedules in NVS, sequencing and log
+// export ship over OTA in later phases.
 
 #include <Arduino.h>
 
 #include "boot_guard.h"
 #include "config.h"
+#include "hunter_bus.h"
 #include "net.h"
 #include "web.h"
+#include "zone_controller.h"
 
 namespace {
 
 constexpr uint32_t kLinkCheckIntervalMs = 10000;
 uint32_t g_lastLinkCheck = 0;
 
+ZoneController g_zones(hunter_bus::enqueue);
+
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
   delay(200);  // let USB CDC enumerate before the first log line
-  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 0)\n", FW_VERSION);
+  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 1)\n", FW_VERSION);
 
   // Before anything that can fail: if the last few boots never reached a healthy
   // state, this reverts to the previous OTA slot and does not return.
   boot_guard::begin();
+
+  // Before the network: the pin should be driven LOW as early as possible, and
+  // the bus must exist before the web server can queue frames to it.
+  hunter_bus::begin(config::kSmartPortPin);
 
   if (!net::begin()) {
     // Deliberately not fatal. The web server still starts, so a link that comes
@@ -37,7 +43,7 @@ void setup() {
     Serial.println("[main] network unavailable at startup");
   }
 
-  web::begin();
+  web::begin(g_zones);
 
   if (net::isUp()) {
     boot_guard::markHealthy();

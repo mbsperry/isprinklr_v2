@@ -8,8 +8,8 @@
 
 namespace config {
 
-// Hunter Pro-C SmartPort / REM line. Declared here so the pin map lives in one
-// place; Phase 0 does not drive it.
+// Hunter Pro-C SmartPort / REM line. Same pin as v1. Zone and duration bounds
+// live in lib/hunter/src/hunter_limits.h, not here.
 constexpr int kSmartPortPin = 18;
 
 // W5500 Ethernet, SPI3. Fixed by the Waveshare ESP32-S3-ETH layout.

@@ -2,16 +2,19 @@
 
 #include <Arduino.h>
 
-// Phase 0 HTTP surface:
-//   GET  /api/status   device state, enough to diagnose a bad update remotely
-//   POST /api/update   firmware upload (multipart), then reboot
+#include "zone_controller.h"
+
+// HTTP surface as of Phase 1:
+//   GET  /api/status       device state, enough to diagnose a bad update remotely
+//   POST /api/zone/start   {"zone": N, "duration_minutes": M}
+//   POST /api/zone/stop    {} or {"zone": N}
+//   POST /api/update       firmware upload (multipart), then reboot
 //
-// Zone control and schedule endpoints are deliberately absent. They arrive over
-// OTA once the device is installed; see docs/api-contract.md for the planned
-// shapes.
+// Shapes are in docs/api-contract.md. Schedule endpoints arrive in Phase 3.
 namespace web {
 
-void begin();
+// The controller is owned by the caller and must outlive the server.
+void begin(ZoneController& zones);
 
 // Reboots pending from an accepted firmware upload are deferred so the HTTP
 // response can be flushed first. Call from loop().

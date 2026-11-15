@@ -1,6 +1,7 @@
 #include "web.h"
 
 #include <ArduinoJson.h>
+#include <AsyncJson.h>
 #include <ESPAsyncWebServer.h>
 #include <Update.h>
 #include <esp_chip_info.h>
@@ -8,12 +9,18 @@
 
 #include "boot_guard.h"
 #include "config.h"
+#include "hunter_bus.h"
 #include "net.h"
+#include "zone_api.h"
 
 namespace web {
 namespace {
 
 AsyncWebServer server(80);
+ZoneController* g_zones = nullptr;
+
+// Zone request bodies are a few dozen bytes.
+constexpr size_t kMaxZoneBodyBytes = 256;
 
 // Set when an accepted upload needs a reboot; checked by tick().
 uint32_t g_restartAt = 0;
@@ -38,14 +45,20 @@ void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
 
   doc["firmware_version"] = FW_VERSION;
-  doc["phase"] = "0";
+  doc["phase"] = "1";
   doc["uptime_ms"] = millis();
   doc["reset_reason"] = resetReasonName(esp_reset_reason());
 
-  // Phase 0 has no clock and no schedule store. Reported explicitly so a client
-  // can tell "not implemented yet" from "implemented and broken".
+  // No clock or schedule store yet (Phases 2 and 3). Reported explicitly so a
+  // client can tell "not implemented yet" from "implemented and broken".
   doc["time_valid"] = false;
   doc["schedule_source"] = "none";
+
+  JsonObject zones = doc["zones"].to<JsonObject>();
+  zone_api::describe(*g_zones, millis(), zones);
+
+  JsonObject bus = doc["hunter_bus"].to<JsonObject>();
+  hunter_bus::describe(bus);
 
   JsonObject boot = doc["boot"].to<JsonObject>();
   boot_guard::describe(boot);
@@ -67,6 +80,29 @@ void handleStatus(AsyncWebServerRequest* request) {
   String out;
   serializeJson(doc, out);
   request->send(200, "application/json", out);
+}
+
+void sendJson(AsyncWebServerRequest* request, int status,
+              const JsonDocument& body) {
+  String out;
+  serializeJson(body, out);
+  request->send(status, "application/json", out);
+}
+
+// Route handlers only adapt between AsyncWebServer and zone_api, which holds
+// the validation and response shapes and is host-tested.
+void addZoneRoute(const char* path,
+                  zone_api::Response (*handler)(ZoneController&,
+                                                JsonVariantConst, uint32_t)) {
+  auto* h = new AsyncCallbackJsonWebHandler(
+      path, [handler](AsyncWebServerRequest* request, JsonVariant& json) {
+        const zone_api::Response r = handler(*g_zones, json, millis());
+        Serial.printf("[web] %s -> %d\n", request->url().c_str(), r.status);
+        sendJson(request, r.status, r.body);
+      });
+  h->setMethod(HTTP_POST);
+  h->setMaxContentLength(kMaxZoneBodyBytes);
+  server.addHandler(h);
 }
 
 void sendUpdateResult(AsyncWebServerRequest* request) {
@@ -123,13 +159,27 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
 
 }  // namespace
 
-void begin() {
+void begin(ZoneController& zones) {
+  g_zones = &zones;
+
   server.on("/api/status", HTTP_GET, handleStatus);
+
+  // curl -H "Content-Type: application/json" -d '{"zone":3,"duration_minutes":2}' http://<ip>/api/zone/start
+  addZoneRoute("/api/zone/start", zone_api::start);
+  addZoneRoute("/api/zone/stop", zone_api::stop);
 
   // curl -F "firmware=@firmware.bin" http://<ip>/api/update
   server.on("/api/update", HTTP_POST, sendUpdateResult, handleUpload);
 
   server.onNotFound([](AsyncWebServerRequest* request) {
+    // The JSON handler only claims application/json requests, so a zone POST
+    // without that header lands here. Say why rather than 404.
+    if (request->url().startsWith("/api/zone/")) {
+      request->send(415, "application/json",
+                    "{\"ok\":false,\"error\":\"unsupported_media_type\","
+                    "\"message\":\"POST with Content-Type: application/json\"}");
+      return;
+    }
     request->send(404, "application/json", "{\"error\":\"not found\"}");
   });
 
