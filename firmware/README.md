@@ -11,6 +11,26 @@ and host unit tests. It has not been run against the Pro-C yet; see
 [`hardware-test-phase1.md`](../docs/hardware-test-phase1.md). No timekeeping or
 schedule storage yet; those ship over OTA in Phases 2 and 3.
 
+**Phase 2** adds SNTP time (US Pacific, automatic DST) and `time_valid` in
+status. Running on the device since 2026-11-15.
+
+### Router NTP
+
+The firmware asks the MikroTik router (192.168.88.1) first, then
+`pool.ntp.org`, then `time.google.com`. The router's NTP server was enabled on
+2026-11-15, so the ESP gets the time after a reboot even during a WAN outage,
+because the router keeps serving its own clock. lwIP sticks with whichever
+server answered last, so after a router outage it may stay on a fallback until
+the next reboot. For reference, the RouterOS 7 setup was:
+
+```
+/system ntp client set enabled=yes servers=pool.ntp.org
+/system ntp server set enabled=yes
+```
+
+Check it from the Mac with `sntp -d 192.168.88.1` (look for a stratum), and
+in `/api/status` the router shows `"reachable": true`.
+
 ## Layout rule
 
 `lib/` is pure C++ with no Arduino dependency: frame building, pulse encoding,
@@ -74,6 +94,8 @@ clangd.
 | `lib/boot_counter/` | Boot-guard decision logic |
 | `src/hunter_bus.cpp` | REM pin and the FreeRTOS task that plays frames onto it |
 | `src/nvs_kv_store.cpp` | `KvStore` on NVS, behind a mutex |
+| `lib/timekeeping/` | Time validity policy, local time and DST, ISO formatting |
+| `src/wallclock.cpp` | SNTP start-up and sync tracking |
 | `src/net.cpp` | Ethernet or WiFi bring-up, selected at compile time |
 | `src/boot_guard.cpp` | OTA slot revert, driven by `BootCounter` |
 | `src/web.cpp` | Routes: status, zone start/stop, firmware upload |

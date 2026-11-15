@@ -14,6 +14,7 @@
 #include "config.h"
 #include "hunter_bus.h"
 #include "net.h"
+#include "wallclock.h"
 #include "zone_api.h"
 
 namespace web {
@@ -60,13 +61,17 @@ void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
 
   doc["firmware_version"] = FW_VERSION;
-  doc["phase"] = "1";
+  doc["phase"] = "2";
   doc["uptime_ms"] = millis();
   doc["reset_reason"] = resetReasonName(esp_reset_reason());
 
-  // No clock or schedule store yet (Phases 2 and 3). Reported explicitly so a
-  // client can tell "not implemented yet" from "implemented and broken".
-  doc["time_valid"] = false;
+  // Top-level time_valid per the API contract; details under "time".
+  doc["time_valid"] = wallclock::timeValid();
+  JsonObject time = doc["time"].to<JsonObject>();
+  wallclock::describe(time);
+
+  // No schedule store yet (Phase 3). Reported explicitly so a client can tell
+  // "not implemented yet" from "implemented and broken".
   doc["schedule_source"] = "none";
 
   JsonObject zones = doc["zones"].to<JsonObject>();

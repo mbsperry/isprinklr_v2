@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Matt Sperry
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// iSprinklr v2 — Phase 1
+// iSprinklr v2 — Phase 2
 //
-// Network, status, OTA, boot guard (Phase 0), plus manual zone control over the
-// Hunter SmartPort line. Timekeeping, schedules in NVS, sequencing and log
-// export ship over OTA in later phases.
+// Network, status, OTA, boot guard (Phase 0); manual zone control over the
+// Hunter SmartPort line (Phase 1); SNTP time with a validity flag (Phase 2).
+// Schedules in NVS, sequencing and log export ship over OTA in later phases.
 
 #include <Arduino.h>
 
@@ -13,6 +13,7 @@
 #include "config.h"
 #include "hunter_bus.h"
 #include "net.h"
+#include "wallclock.h"
 #include "web.h"
 #include "zone_controller.h"
 
@@ -32,7 +33,7 @@ void setup() {
 
   Serial.begin(115200);
   delay(200);  // let USB CDC enumerate before the first log line
-  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 1)\n", FW_VERSION);
+  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 2)\n", FW_VERSION);
 
   // Before anything that can fail: if the last few boots never reached a healthy
   // state, this reverts to the previous OTA slot and does not return.
@@ -45,6 +46,10 @@ void setup() {
     // reverts to the previous image.
     Serial.println("[main] network unavailable at startup");
   }
+
+  // After network bring-up was attempted, but not conditional on it: SNTP
+  // keeps polling until a server answers.
+  wallclock::begin();
 
   web::begin(g_zones);
 
