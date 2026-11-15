@@ -14,6 +14,8 @@
 #include "config.h"
 #include "hunter_bus.h"
 #include "net.h"
+#include "settings_api.h"
+#include "settings_service.h"
 #include "wallclock.h"
 #include "zone_api.h"
 
@@ -23,8 +25,11 @@ namespace {
 AsyncWebServer server(80);
 ZoneController* g_zones = nullptr;
 
-// Zone request bodies are a few dozen bytes.
+// Zone request bodies are a few dozen bytes. Settings bodies use the verbose
+// API shape, several times the stored size; 16 KB covers anything that could
+// fit in flash after compaction.
 constexpr size_t kMaxZoneBodyBytes = 256;
+constexpr size_t kMaxSettingsBodyBytes = 16384;
 
 // Set when an accepted upload needs a reboot; checked by tick().
 uint32_t g_restartAt = 0;
@@ -61,7 +66,7 @@ void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
 
   doc["firmware_version"] = FW_VERSION;
-  doc["phase"] = "2";
+  doc["phase"] = "3";
   doc["uptime_ms"] = millis();
   doc["reset_reason"] = resetReasonName(esp_reset_reason());
 
@@ -70,9 +75,17 @@ void handleStatus(AsyncWebServerRequest* request) {
   JsonObject time = doc["time"].to<JsonObject>();
   wallclock::describe(time);
 
-  // No schedule store yet (Phase 3). Reported explicitly so a client can tell
-  // "not implemented yet" from "implemented and broken".
-  doc["schedule_source"] = "none";
+  // Settings live in NVS. settings_hash is what the server compares against
+  // its backup to detect drift.
+  doc["schedule_source"] = "nvs";
+  timekeeping::LocalTime today;
+  const bool haveToday = wallclock::localNow(&today);
+  settings_service::with([&](SettingsStore& store) {
+    doc["settings_hash"] = store.hash();
+    JsonObject settings = doc["settings"].to<JsonObject>();
+    settings_api::describe(store, haveToday ? &today : nullptr, settings);
+    return 0;
+  });
 
   JsonObject zones = doc["zones"].to<JsonObject>();
   zone_api::describe(*g_zones, millis(), zones);
@@ -132,6 +145,45 @@ void addZoneRoute(const char* path,
   h->setMethod(HTTP_POST);
   h->setMaxContentLength(kMaxZoneBodyBytes);
   server.addHandler(h);
+}
+
+void addSettingsGet(const char* path,
+                    api::Response (*handler)(const SettingsStore&)) {
+  server.on(path, HTTP_GET, [handler](AsyncWebServerRequest* request) {
+    const api::Response r = settings_service::with(
+        [handler](SettingsStore& store) { return handler(store); });
+    sendJson(request, r.status, r.body);
+  });
+}
+
+// after runs (under the settings lock) only when the PUT succeeded.
+void addSettingsPut(const char* path,
+                    api::Response (*handler)(SettingsStore&, JsonVariantConst),
+                    void (*after)(const SettingsStore&) = nullptr) {
+  auto* h = new AsyncCallbackJsonWebHandler(
+      path, [handler, after](AsyncWebServerRequest* request, JsonVariant& json) {
+        const api::Response r =
+            settings_service::with([&](SettingsStore& store) {
+              api::Response result = handler(store, json);
+              if (result.status == 200 && after != nullptr) after(store);
+              return result;
+            });
+        Serial.printf("[web] PUT %s -> %d\n", request->url().c_str(), r.status);
+        sendJson(request, r.status, r.body);
+      });
+  h->setMethod(HTTP_PUT);
+  h->setMaxContentLength(kMaxSettingsBodyBytes);
+  server.addHandler(h);
+}
+
+void applyConfig(const SettingsStore& store) {
+  wallclock::setTimezone(store.current().config.timezone);
+}
+
+bool isJsonOnlyPath(const String& url) {
+  return url.startsWith("/api/zone/") || url == "/api/schedules" ||
+         url.startsWith("/api/schedule/") || url == "/api/zones" ||
+         url == "/api/config";
 }
 
 void sendUpdateResult(AsyncWebServerRequest* request) {
@@ -228,16 +280,26 @@ void begin(ZoneController& zones) {
   addZoneRoute("/api/zone/start", zone_api::start);
   addZoneRoute("/api/zone/stop", zone_api::stop);
 
+  addSettingsGet("/api/schedules", settings_api::getSchedules);
+  addSettingsPut("/api/schedules", settings_api::putSchedules);
+  addSettingsPut("/api/schedule/active", settings_api::putActive);
+  addSettingsGet("/api/schedule/enabled", settings_api::getEnabled);
+  addSettingsPut("/api/schedule/enabled", settings_api::putEnabled);
+  addSettingsGet("/api/zones", settings_api::getZones);
+  addSettingsPut("/api/zones", settings_api::putZones);
+  addSettingsGet("/api/config", settings_api::getConfig);
+  addSettingsPut("/api/config", settings_api::putConfig, applyConfig);
+
   // curl -F "firmware=@firmware.bin" http://<ip>/api/update
   server.on("/api/update", HTTP_POST, sendUpdateResult, handleUpload);
 
   server.onNotFound([](AsyncWebServerRequest* request) {
-    // The JSON handler only claims application/json requests, so a zone POST
+    // The JSON handlers only claim application/json requests, so a write
     // without that header lands here. Say why rather than 404.
-    if (request->url().startsWith("/api/zone/")) {
+    if (request->method() != HTTP_GET && isJsonOnlyPath(request->url())) {
       request->send(415, "application/json",
                     "{\"ok\":false,\"error\":\"unsupported_media_type\","
-                    "\"message\":\"POST with Content-Type: application/json\"}");
+                    "\"message\":\"send the body with Content-Type: application/json\"}");
       return;
     }
     request->send(404, "application/json", "{\"error\":\"not found\"}");

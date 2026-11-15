@@ -43,6 +43,32 @@ bool NvsKvStore::putU32(const char* ns, const char* key, uint32_t value) {
   return ok;
 }
 
+bool NvsKvStore::getBlob(const char* ns, const char* key, std::string* out) {
+  Lock lock;
+  Preferences prefs;
+  if (!prefs.begin(ns, /*readOnly=*/true)) return false;
+  bool ok = false;
+  const size_t len = prefs.isKey(key) ? prefs.getBytesLength(key) : 0;
+  if (len > 0) {
+    std::string buf(len, '\0');
+    ok = prefs.getBytes(key, &buf[0], len) == len;
+    if (ok) *out = std::move(buf);
+  }
+  prefs.end();
+  return ok;
+}
+
+bool NvsKvStore::putBlob(const char* ns, const char* key,
+                         const std::string& value) {
+  Lock lock;
+  Preferences prefs;
+  if (!prefs.begin(ns, /*readOnly=*/false)) return false;
+  const bool ok =
+      prefs.putBytes(key, value.data(), value.size()) == value.size();
+  prefs.end();
+  return ok;
+}
+
 NvsKvStore& nvsStore() {
   static NvsKvStore store;
   return store;

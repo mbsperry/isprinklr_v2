@@ -1,0 +1,42 @@
+#include "settings_service.h"
+
+#include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+#include "nvs_kv_store.h"
+
+namespace settings_service {
+namespace {
+
+SemaphoreHandle_t g_mutex = nullptr;
+
+}  // namespace
+
+SettingsStore& store() {
+  static SettingsStore s(nvsStore());
+  return s;
+}
+
+void lock() { xSemaphoreTake(g_mutex, portMAX_DELAY); }
+void unlock() { xSemaphoreGive(g_mutex); }
+
+void begin() {
+  g_mutex = xSemaphoreCreateMutex();
+  with([](SettingsStore& s) {
+    const SettingsStore::LoadState state = s.load();
+    Serial.printf("[settings] %s, hash %s, %u zones, %u schedules, active '%s', %s\n",
+                  toString(state), s.hash().c_str(),
+                  static_cast<unsigned>(s.current().zones.size()),
+                  static_cast<unsigned>(s.current().schedules.size()),
+                  s.current().activeSchedule.c_str(),
+                  s.current().enabled ? "enabled" : "disabled");
+    if (state == SettingsStore::LoadState::kCorrupt) {
+      Serial.printf("[settings] stored document rejected: %s\n",
+                    s.loadError().c_str());
+    }
+    return 0;
+  });
+}
+
+}  // namespace settings_service

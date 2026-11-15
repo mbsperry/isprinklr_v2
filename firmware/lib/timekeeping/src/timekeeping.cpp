@@ -31,6 +31,11 @@ long long asUtcSeconds(const std::tm& t) {
 
 }  // namespace
 
+long daysSinceEpoch(int year, int month, int day) {
+  return daysFromCivil(year, static_cast<unsigned>(month),
+                       static_cast<unsigned>(day));
+}
+
 bool isTimeValid(const SyncState& sync, std::time_t now) {
   return sync.syncCount > 0 && now >= kMinPlausibleEpoch;
 }

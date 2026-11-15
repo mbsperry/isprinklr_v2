@@ -115,4 +115,6 @@ Recorded so they do not get relitigated.
 | Platform | pioarduino `55.03.311` (Arduino-ESP32 3.3.11); official registry 7.1.3 is Arduino 2.x |
 | Board memory type | `qio_opi` — confirmed on hardware, 8 MB PSRAM visible |
 | Device address | 192.168.88.54, static reservation on the router |
+| `EO` day pattern | Strict alternation by days since 1970-01-01; not v1's day-of-year parity (2026-11-15) |
+| Settings storage | One compact NVS document, 4 KB cap, all-or-nothing writes, FNV-1a `settings_hash` |
 | Deploy path | `POST /api/update` over the LAN; USB only for recovery |

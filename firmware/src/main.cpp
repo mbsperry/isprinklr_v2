@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Matt Sperry
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// iSprinklr v2 — Phase 2
+// iSprinklr v2 — Phase 3
 //
 // Network, status, OTA, boot guard (Phase 0); manual zone control over the
-// Hunter SmartPort line (Phase 1); SNTP time with a validity flag (Phase 2).
-// Schedules in NVS, sequencing and log export ship over OTA in later phases.
+// Hunter SmartPort line (Phase 1); SNTP time with a validity flag (Phase 2);
+// zones, schedules and config stored in NVS (Phase 3). Running schedules
+// (Phase 4) and log export ship over OTA later.
 
 #include <Arduino.h>
 
@@ -13,6 +14,7 @@
 #include "config.h"
 #include "hunter_bus.h"
 #include "net.h"
+#include "settings_service.h"
 #include "wallclock.h"
 #include "web.h"
 #include "zone_controller.h"
@@ -33,11 +35,15 @@ void setup() {
 
   Serial.begin(115200);
   delay(200);  // let USB CDC enumerate before the first log line
-  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 2)\n", FW_VERSION);
+  Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 3)\n", FW_VERSION);
 
   // Before anything that can fail: if the last few boots never reached a healthy
   // state, this reverts to the previous OTA slot and does not return.
   boot_guard::begin();
+
+  // Settings before the network: the timezone comes from them, and the web
+  // server must not serve settings routes before they are loaded.
+  settings_service::begin();
 
   if (!net::begin()) {
     // Deliberately not fatal. The web server still starts, so a link that comes
@@ -49,7 +55,8 @@ void setup() {
 
   // After network bring-up was attempted, but not conditional on it: SNTP
   // keeps polling until a server answers.
-  wallclock::begin();
+  wallclock::begin(settings_service::with(
+      [](SettingsStore& s) { return s.current().config.timezone; }));
 
   web::begin(g_zones);
 
