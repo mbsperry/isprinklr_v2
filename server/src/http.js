@@ -1,12 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Matt Sperry
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// GET /api/logs: log history, filterable by level, module and time range
-// (docs/api-contract.md, Node service). Static hosting and schedule backups
-// come with Phase 6.
+// The server's HTTP side (docs/api-contract.md, Node service):
+//   GET /api/logs          log history, filterable by level, module and time
+//   GET /api/health        row count, sink counters, last backup
+//   GET /api/backups       settings backups, newest first
+//   GET /api/backups/:ts   one backup ("latest" for the newest)
+//   anything else          web/'s static build
 
 import http from 'node:http';
 
+import { listBackups, readBackup } from './backup.js';
 import { MAX_QUERY_LIMIT } from './log_store.js';
 import { parseLevel } from './syslog.js';
 
@@ -60,14 +64,39 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-export function createHttpServer(store, { sinkStats = () => ({}) } = {}) {
-  return http.createServer((req, res) => {
-    const url = new URL(req.url, 'http://localhost');
-    if (req.method !== 'GET') {
+// options:
+//   sinkStats:   () => UDP sink counters, for /api/health
+//   backupStats: () => last backup outcome, for /api/health
+//   backupsDir:  where settings backups live; /api/backups is 404 without it
+//   staticHandler: from createStaticHandler; non-API paths are 404 without it
+export function createHttpServer(store, {
+  sinkStats = () => ({}),
+  backupStats = () => null,
+  backupsDir = null,
+  staticHandler = null,
+} = {}) {
+  return http.createServer(async (req, res) => {
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch {
+      send(res, 400, { ok: false, error: 'bad_request' });
+      return;
+    }
+    const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');
+    if (req.method !== 'GET' && !(req.method === 'HEAD' && !isApi)) {
       send(res, 405, { ok: false, error: 'method_not_allowed' });
       return;
     }
     try {
+      if (!isApi) {
+        if (staticHandler) {
+          await staticHandler(req, res, url.pathname);
+        } else {
+          send(res, 404, { ok: false, error: 'not_found' });
+        }
+        return;
+      }
       if (url.pathname === '/api/logs') {
         const result = store.query(parseLogQuery(url.searchParams));
         send(res, 200, {
@@ -78,7 +107,25 @@ export function createHttpServer(store, { sinkStats = () => ({}) } = {}) {
         return;
       }
       if (url.pathname === '/api/health') {
-        send(res, 200, { ok: true, rows: store.count(), sink: sinkStats() });
+        send(res, 200, {
+          ok: true, rows: store.count(), sink: sinkStats(), backup: backupStats(),
+        });
+        return;
+      }
+      if (backupsDir && url.pathname === '/api/backups') {
+        send(res, 200, { ok: true, backups: await listBackups(backupsDir) });
+        return;
+      }
+      const one = /^\/api\/backups\/([^/]+)$/.exec(url.pathname);
+      if (backupsDir && one) {
+        let ts = one[1];
+        if (ts === 'latest') ts = (await listBackups(backupsDir))[0]?.timestamp;
+        const doc = ts ? await readBackup(backupsDir, ts) : null;
+        if (doc === null) {
+          send(res, 404, { ok: false, error: 'not_found' });
+        } else {
+          send(res, 200, { ok: true, timestamp: ts, backup: doc });
+        }
         return;
       }
       send(res, 404, { ok: false, error: 'not_found' });
@@ -86,7 +133,11 @@ export function createHttpServer(store, { sinkStats = () => ({}) } = {}) {
       if (err instanceof BadRequest) {
         send(res, 400, { ok: false, error: 'invalid_query', message: err.message });
       } else {
-        send(res, 500, { ok: false, error: 'internal', message: err.message });
+        if (res.headersSent) {
+          res.destroy();
+        } else {
+          send(res, 500, { ok: false, error: 'internal', message: err.message });
+        }
       }
     }
   });

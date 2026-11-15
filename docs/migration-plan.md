@@ -169,7 +169,9 @@ Done 2026-11-15 as `0.6.0-phase5`; hardware test in
 ## Phase 6 — Server and frontend
 
 - Node service: static hosting for the frontend, UDP log sink, nightly schedule
-  backup. Replaces both FastAPI and nginx.
+  backup. Replaces both FastAPI and nginx. *Server side built:* static
+  hosting and the settings backup, run under pm2 on the Proxmox container
+  (`docs/server-deploy.md`).
 - Frontend rebuilt on Vite. v1 used `react-scripts` 5 (CRA, unmaintained).
   Start from v1's `use_v2_api` branch for endpoint shapes rather than its stale
   `main`, which still calls endpoints that no longer exist.

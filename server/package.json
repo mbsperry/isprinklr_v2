@@ -2,7 +2,7 @@
   "name": "isprinklr-server",
   "version": "0.1.0",
   "private": true,
-  "description": "iSprinklr v2 server: UDP log sink with SQLite history. Observational only.",
+  "description": "iSprinklr v2 server: web UI hosting, UDP log sink with SQLite history, nightly settings backup. Observational only.",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "engines": {
@@ -10,6 +10,8 @@
   },
   "scripts": {
     "start": "node src/main.js",
+    "backup": "node src/backup_now.js",
+    "restore-commands": "node src/restore_commands.js",
     "test": "node --test test/"
   }
 }

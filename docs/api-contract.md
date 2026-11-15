@@ -4,7 +4,7 @@
 `/api/zone/stop`, and `/api/update` exist as of Phase 1, and the `time` fields
 of `/api/status` as of Phase 2, and the schedule, zone and config endpoints as
 of Phase 3, and the run endpoints and status fields as of Phase 4, and the
-logging endpoints of both hosts as of Phase 5; their shapes below are the
+logging endpoints of both hosts as of Phase 5, and the Node service's backups and static hosting as of Phase 6; their shapes below are the
 implemented ones. The rest is the shape to design against, and this file
 should change with the firmware.
 
@@ -296,10 +296,10 @@ not counted.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/logs` | Log history, filterable by level, module, and time range. *Implemented (Phase 5).* |
-| GET | `/api/health` | Row count and UDP sink counters. *Implemented (Phase 5).* |
-| GET | `/api/backups` | Available schedule backups. |
-| GET | `/api/backups/:timestamp` | One backup, for restoring by hand. |
-| — | (static) | The built frontend. |
+| GET | `/api/health` | Row count, UDP sink counters, last backup. *Implemented (Phase 5; `backup` Phase 6).* |
+| GET | `/api/backups` | Available settings backups. *Implemented (Phase 6).* |
+| GET | `/api/backups/:timestamp` | One backup, for restoring by hand; `latest` for the newest. *Implemented (Phase 6).* |
+| GET | (anything else) | The built frontend. *Implemented (Phase 6).* |
 
 Inbound from the ESP: UDP syslog. Not an HTTP endpoint, deliberately — see
 `architecture.md`.
@@ -327,6 +327,36 @@ next page.
 the ESP's clock was valid, placed by its uptime once a timed line from the same
 boot arrived), or `received` (the server's clock, when neither was possible).
 Rows older than 12 months are deleted nightly at 03:30 local time.
+
+**Backups.** Taken at startup and nightly at 03:45 local time, from the ESP's
+`/api/zones`, `/api/schedules` and `/api/config` (read again if their
+`settings_hash` values disagree, meaning a change landed mid-read), plus
+`firmware_version` from `/api/status`.
+
+```json
+GET /api/backups
+{"ok": true, "backups": [{"timestamp": "2026-11-16T11-45-00Z",
+  "taken_at": "2026-11-16T11:45:00.463Z", "settings_hash": "78a2614c",
+  "bytes": 7208}]}
+
+GET /api/backups/2026-11-16T11-45-00Z
+{"ok": true, "timestamp": "2026-11-16T11-45-00Z",
+ "backup": {"format": "isprinklr-settings-backup", "format_version": 1,
+   "taken_at": "...", "device": "http://192.168.88.54",
+   "firmware_version": "0.6.0-phase5", "settings_hash": "78a2614c",
+   "restore": [{"path": "/api/zones", "body": {"zones": [...]}},
+               {"path": "/api/schedules", "body": {"schedules": [...]}},
+               {"path": "/api/schedule/active", "body": {"name": "Late Fall"}},
+               {"path": "/api/config", "body": {"start_hour": 7, ...}},
+               {"path": "/api/schedule/enabled", "body": {"enabled": false}}]}}
+```
+
+Timestamps are UTC with `-` for `:`, newest first. `restore` holds each PUT
+body exactly as the device takes it, in the order a blank board needs.
+`/api/health` gains `"backup": {"last_attempt", "last_success",
+"last_timestamp", "last_error"}`, or null when backups are off. Unknown
+`/api/...` paths are JSON 404s; any other GET is the frontend, with
+`index.html` for paths that name no file.
 
 ## Day patterns
 
