@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Matt Sperry
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "zone_controller.h"
 
 #include "hunter_limits.h"

@@ -1,0 +1,44 @@
+iSprinklr v2
+Copyright (C) 2026 Matt Sperry
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See LICENSE for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+-------------------------------------------------------------------------------
+Third-party work
+-------------------------------------------------------------------------------
+
+The Hunter SmartPort (REM line) driver in firmware/lib/hunter/ and
+firmware/src/hunter_bus.cpp is adapted from the HunterRoam library as used in
+isprinklr_esp (v1). The frame layout, bitfield packing and pulse timings come
+from that code. Its lineage:
+
+  HunterRoam (Hunter Roam - WiFi)
+    Copyright (C) 2020-2022 Eloi Codina Torras
+    https://github.com/ecodina/hunter-wifi
+    License: GPL-3.0-or-later
+
+  which is adapted from:
+
+  OpenSprinkler-Firmware-Hunter (hunter.cpp)
+    Sebastien, https://github.com/seb821/OpenSprinkler-Firmware-Hunter
+    A fork of OpenSprinkler firmware, Copyright (C) 2015 Ray Wang,
+    License: GPL-3.0-or-later (LICENSE.txt is GPLv3; source headers grant
+    "version 3 of the License, or (at your option) any later version")
+
+  and the original SmartPort reverse-engineering by Dave Fleck and
+  Scott Shumate:
+    https://www.hackster.io/sshumate/hunter-sprinkler-wifi-remote-control-4ea918
+
+The v2 code is a rewrite (pure frame builder and pulse encoder, FreeRTOS bus
+task) rather than a copy, but it reproduces the upstream encoding byte for byte
+and is distributed under the same license.
+
+Hunter, Pro-C and SmartPort are trademarks of Hunter Industries. This project
+is not affiliated with or endorsed by Hunter Industries.

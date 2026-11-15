@@ -1,3 +1,12 @@
+// SPDX-FileCopyrightText: 2026 Matt Sperry
+// SPDX-FileCopyrightText: 2020-2022 Eloi Codina Torras (HunterRoam, https://github.com/ecodina/hunter-wifi)
+// SPDX-FileCopyrightText: Sebastien (https://github.com/seb821/OpenSprinkler-Firmware-Hunter)
+// SPDX-FileCopyrightText: Dave Fleck
+// SPDX-FileCopyrightText: Scott Shumate
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Adapted from the HunterRoam SmartPort library (GPL-3.0-or-later). See NOTICE.
+
 #pragma once
 
 #include <cstddef>

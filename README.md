@@ -61,7 +61,12 @@ Scaffolding. No implementation yet. See
 
 ## License
 
-Not yet chosen — see [`docs/open-decisions.md`](docs/open-decisions.md). The v1
-repositories disagree (firmware GPL-3.0, frontend MIT), and the GPL is likely
-load-bearing for the firmware because the Hunter SmartPort implementation derives
-from GPL-licensed work.
+Copyright (C) 2026 Matt Sperry. Licensed under the GNU General Public License,
+version 3 or (at your option) any later version. See [`LICENSE`](LICENSE).
+
+The Hunter SmartPort driver is adapted from the GPL-3.0-or-later
+[HunterRoam](https://github.com/ecodina/hunter-wifi) library by Eloi Codina
+Torras, which builds on work by Sebastien
+([OpenSprinkler-Firmware-Hunter](https://github.com/seb821/OpenSprinkler-Firmware-Hunter)),
+Dave Fleck and Scott Shumate. See [`NOTICE`](NOTICE) for attribution. Source files
+carry [SPDX](https://spdx.dev/) headers.

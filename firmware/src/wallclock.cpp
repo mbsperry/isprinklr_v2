@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Matt Sperry
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "wallclock.h"
 
 #include <Arduino.h>

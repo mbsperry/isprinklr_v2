@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Matt Sperry
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // iSprinklr v2 — Phase 2
 //
 // Network, status, OTA, boot guard (Phase 0); manual zone control over the
