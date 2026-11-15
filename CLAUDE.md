@@ -37,6 +37,8 @@ Two consequences that are easy to violate by accident:
 - Bounds (zone range, duration limits) live in one place, shared by validation and
   tests. v1 had three disagreeing sets.
 - NVS is not thread-safe: all access through one task or behind a mutex.
+- Docs: shell blocks meant for copy-paste contain no `#` comment lines; put
+  explanation in prose. Matt pastes into interactive zsh, where `#` is a command.
 
 ## Context
 

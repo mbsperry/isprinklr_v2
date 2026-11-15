@@ -3,8 +3,19 @@
 Repartition the ESP32 and install OTA capability. One USB session; everything
 after this goes over the network.
 
-**The firmware in `firmware/` has never been compiled.** Step 1 is a build, and it
-happens at your desk, not in the basement.
+**Status: completed 2026-11-14.** Flashed over USB, then verified on hardware:
+W5500 up at 100 Mbps full duplex, PSRAM detected (~8.6 MB free heap), OTA in both
+directions (app0 → app1 → app0), and the boot guard reverting a never-healthy
+image after three boots. The device is at **192.168.88.54** (static reservation
+on the router). For day-to-day updates, skip to
+[Routine OTA update](#routine-ota-update).
+
+The steps below are kept as the record of the install and as the procedure if
+the device ever needs a USB reflash.
+
+Command blocks here contain no `#` comment lines, so they paste cleanly into
+interactive zsh (which treats `#` as a command unless `setopt interactivecomments`
+is set).
 
 ---
 
@@ -12,20 +23,27 @@ happens at your desk, not in the basement.
 
 ### 1. Toolchain
 
+PlatformIO Core 6.2.0+ is required under uv. uv installs `pio` into
+`~/.local/bin`, which is not on the default macOS PATH:
+
 ```bash
-uv tool install platformio          # 6.2.0+ required under uv
+uv tool install platformio
+export PATH="$HOME/.local/bin:$PATH"
 cd firmware
 pio run -e ethernet
 ```
+
+Add the `export` line to `~/.zshrc` to make it permanent.
 
 The first build downloads ~1–2 GB (Xtensa toolchain, Arduino framework,
 libraries). Do this on wifi at your desk.
 
 Expect to fix something. Points of risk, in rough order of likelihood:
 
-- **Platform.** Pinned to pioarduino `55.03.311` (Arduino-ESP32 3.3.11). The
-  official `espressif32@7.1.3` ships Arduino 2.0.17 and cannot compile the W5500
-  call. Do not go back to a floating URL.
+- **Platform.** Pinned to pioarduino `55.03.311` (Arduino-ESP32 3.3.11, ESP-IDF
+  5.5.5). The official registry `espressif32@7.1.3` was the original plan, but it
+  ships Arduino 2.0.17 (IDF 4.4), where `ETH_PHY_W5500` and `SPI3_HOST` do not
+  exist, so `net.cpp` fails to compile. Do not go back to a floating URL.
 - **Library versions.** Pinned exactly (AsyncTCP 3.6.1, ESPAsyncWebServer 3.12.1,
   ArduinoJson 7.4.3). `pio pkg outdated` shows what's newer.
 - CI (`.github/workflows/firmware.yml`) builds both envs on every firmware change,
@@ -59,9 +77,15 @@ declares a partition table, so `platformio.ini` is the only source.
 
 ### 4. Erase
 
+Find the serial port first (it appears as `/dev/cu.usbmodem…`), then erase:
+
 ```bash
-pio run -e ethernet -t erase
+pio device list
+PORT=/dev/cu.usbmodemXXXX
+pio run -e ethernet -t erase --upload-port $PORT
 ```
+
+If erase or upload cannot connect, hold BOOT, tap RESET, release BOOT, and rerun.
 
 Required: partition offsets move, so stale NVS would be read at the wrong
 address. Nothing of value is lost — Phase 0 stores no schedules, and WiFi
@@ -70,9 +94,13 @@ credentials come from build flags.
 ### 5. Flash
 
 ```bash
-pio run -e ethernet -t upload
-pio device monitor
+pio run -e ethernet -t upload --upload-port $PORT
+pio device monitor -p $PORT
 ```
+
+The board uses native USB CDC, so the serial port drops on every reset and the
+monitor reconnects a moment later. Lines printed in the first ~100 ms after a
+reset are usually missed. If the monitor sits silent after upload, tap RESET.
 
 Expect, in order:
 
@@ -92,7 +120,7 @@ revert after three boots.
 ### 6. Verify status
 
 ```bash
-curl -s http://<ip>/api/status | jq
+curl -s http://192.168.88.54/api/status | jq
 ```
 
 Check:
@@ -105,11 +133,15 @@ Check:
 
 ### 7. OTA round trip
 
-Change something visible — bump `FW_VERSION` in `platformio.ini` — then:
+Change something visible by bumping `FW_VERSION` in `platformio.ini`, then build
+and upload. Confirm the edit actually landed: a changed build flag forces a full
+rebuild (15 s or more), so a 3-second build means the old version was rebuilt.
 
 ```bash
+sed -i '' 's/0\.1\.0-phase0/0.1.1-phase0/' platformio.ini
+grep FW_VERSION platformio.ini
 pio run -e ethernet
-curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://<ip>/api/update
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
 ```
 
 Expect `{"ok":true,"message":"update accepted, rebooting"}`, then the device
@@ -117,7 +149,7 @@ reboots. Confirm the new version:
 
 ```bash
 sleep 20
-curl -s http://<ip>/api/status | jq '.firmware_version, .boot.running_partition'
+curl -s http://192.168.88.54/api/status | jq '.firmware_version, .boot.running_partition'
 ```
 
 `running_partition` should now read `app1`.
@@ -133,39 +165,79 @@ doesn't.
 Only worth doing while you have USB access, because it is the one test that can
 leave the device unreachable.
 
-Build an image that reaches `web::begin()` but never calls `markHealthy()` — e.g.
-temporarily comment out both call sites in `main.cpp` — push it over OTA, then
-power-cycle three times. On the third boot the log should show:
+Build an image that reaches `web::begin()` but never calls `markHealthy()`, push
+it over OTA, and watch the monitor:
 
-```
-[boot] 3 consecutive unhealthy boots
-[boot] reverting to app0 (0.1.0-phase0)
+```bash
+sed -i '' 's/boot_guard::markHealthy();/\/\/ &/' src/main.cpp
+sed -i '' 's/0\.1\.1-phase0/0.1.2-noguard/' platformio.ini
+pio run -e ethernet
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+pio device monitor -p $PORT
 ```
 
-and come back on the previous image. Then re-flash the real firmware.
+The reboot after the upload is unhealthy boot 1. Tap RESET three times, letting it
+boot fully each time; on the third reset the guard switches slots and restarts
+(`rst:0xc (RTC_SW_CPU_RST)`), and the previous image comes up healthy. The
+`[boot] reverting to …` line is usually lost to the USB reconnect described in
+step 5, so confirm with `/api/status` instead. Then restore the real firmware:
+
+```bash
+git checkout src/main.cpp platformio.ini
+pio run -e ethernet
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+```
+
+Result on 2026-11-14: `0.1.2-noguard` on app1 reverted to `0.1.1-phase0` on app0
+as designed.
 
 If you skip this, the guard is untested code. Your call — you have USB access, so
 the downside is a trip downstairs rather than a dead controller.
 
 ### 10. Leave
 
-Reinstall, confirm `/api/status` answers from upstairs, and note the IP.
+Reinstall, confirm `/api/status` answers from upstairs, and note the IP. The
+device has a static reservation at 192.168.88.54.
 
 ---
 
-## Afterwards
+## Routine OTA update
 
-Deployment for the rest of the winter:
+How every firmware change ships from now on. From the repo root, on a machine on
+the LAN or the router VPN:
 
 ```bash
+export PATH="$HOME/.local/bin:$PATH"
 cd firmware
 pio run -e ethernet
-curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://<ip>/api/update
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+sleep 20
+curl -s http://192.168.88.54/api/status | jq '.firmware_version, .boot'
 ```
 
-If an update ever bricks reachability, the guard reverts after three failed
-boots. If that also fails, it's a USB trip — which is why Phase 0 is as small as
-it is.
+Expect `{"ok":true,...}` from the upload, then the new `firmware_version`,
+`healthy: true`, and `running_partition` flipped to the other slot. The slots
+alternate on every update, so either `app0` or `app1` is normal.
+
+If the upload returns `"ok":false`, the running firmware is untouched; read the
+`error` field. If the device stops answering after an update, wait: the boot guard
+reverts after three unhealthy boots, and an unreachable image usually also fails
+its network check quickly, but a power-cycle or two may be needed to get through
+three boots. If that also fails, it is a USB trip — which is why Phase 0 is as
+small as it is.
+
+## Lessons from the install
+
+- `espressif32@7.1.3` from the PlatformIO registry is Arduino-ESP32 2.0.17, not
+  3.x. The firmware needs pioarduino; see the platform note in step 1.
+- uv puts `pio` in `~/.local/bin`, not on the default PATH.
+- Native USB CDC drops the serial port on every reset, so the first log lines
+  after a reset are usually missed. Use `/api/status` as the source of truth.
+- Check that a `FW_VERSION` bump actually saved before uploading; a fast build
+  means nothing changed.
+- Hardware facts confirmed: W5500 on SPI3 with the vendored pin map, 100 Mbps full
+  duplex; `qio_opi` memory type correct (8 MB PSRAM visible); chip revision 2.
+- Flash use at Phase 0: ethernet build 14.6% of the 4 MB slot, RAM 9.3%.
 
 ## What Phase 0 deliberately does not do
 

@@ -18,8 +18,10 @@ disaster.
 
 ## Phase 0 — OTA repartition
 
-One USB trip. Implemented — see [`phase0-runbook.md`](phase0-runbook.md) for the
-exact command sequence and verification steps.
+**Complete (2026-11-14).** One USB trip, then OTA verified in both directions and
+the boot guard proven on hardware. Device at 192.168.88.54. See
+[`phase0-runbook.md`](phase0-runbook.md) for the install record, lessons learned,
+and the routine OTA update procedure.
 
 Do this **before** schedules live in NVS: the repartition erases NVS, and right
 now there is nothing in it worth keeping (WiFi credentials come from build flags,
