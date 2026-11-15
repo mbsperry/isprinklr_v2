@@ -51,6 +51,11 @@ struct LocalTime {
   int minuteOfDay() const { return hour * 60 + minute; }
 };
 
+// Days from 1970-01-01 to the given proleptic Gregorian date. Pure arithmetic,
+// no timezone involved; used for "every other day" so it alternates strictly
+// across month and year ends.
+long daysSinceEpoch(int year, int month, int day);
+
 // Local time in the zone set by applyTimezone().
 LocalTime toLocal(std::time_t epoch);
 

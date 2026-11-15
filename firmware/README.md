@@ -14,6 +14,10 @@ schedule storage yet; those ship over OTA in Phases 2 and 3.
 **Phase 2** adds SNTP time (US Pacific, automatic DST) and `time_valid` in
 status. Running on the device since 2026-11-15.
 
+**Phase 3** stores zones, schedules, the active schedule, the on/off switch and
+config in NVS, with read/write endpoints. Running on the device since
+2026-11-15, holding the data imported from v1.
+
 ### Router NTP
 
 The firmware asks the MikroTik router (192.168.88.1) first, then
@@ -94,6 +98,9 @@ clangd.
 | `lib/boot_counter/` | Boot-guard decision logic |
 | `src/hunter_bus.cpp` | REM pin and the FreeRTOS task that plays frames onto it |
 | `src/nvs_kv_store.cpp` | `KvStore` on NVS, behind a mutex |
+| `lib/settings/` | Settings model, day patterns, validation, JSON shapes, NVS store, route logic |
+| `lib/api/` | Shared response type for host-tested route logic |
+| `src/settings_service.cpp` | The device's settings store behind a mutex |
 | `lib/timekeeping/` | Time validity policy, local time and DST, ISO formatting |
 | `src/wallclock.cpp` | SNTP start-up and sync tracking |
 | `src/net.cpp` | Ethernet or WiFi bring-up, selected at compile time |

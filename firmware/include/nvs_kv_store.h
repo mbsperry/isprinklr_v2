@@ -12,6 +12,9 @@ class NvsKvStore : public KvStore {
  public:
   bool getU32(const char* ns, const char* key, uint32_t* out) override;
   bool putU32(const char* ns, const char* key, uint32_t value) override;
+  bool getBlob(const char* ns, const char* key, std::string* out) override;
+  bool putBlob(const char* ns, const char* key,
+               const std::string& value) override;
 };
 
 // The one instance. All NVS access goes through it.

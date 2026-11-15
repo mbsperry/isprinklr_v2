@@ -4,13 +4,14 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 // Persistent key-value storage, behind an interface so logic that persists state
 // can be host-tested against MemoryKvStore. The device implementation is
 // src/nvs_kv_store.cpp (NVS via Preferences, serialised by a mutex).
 //
-// Deliberately minimal: Phase 1 only needs counters. Phase 3 adds what schedules
-// need (blobs or strings) when there is a caller to design them against.
+// Deliberately minimal: counters (boot guard) and byte blobs (the settings
+// document, Phase 3).
 class KvStore {
  public:
   virtual ~KvStore() = default;
@@ -21,4 +22,12 @@ class KvStore {
 
   // Returns false if the write did not persist.
   virtual bool putU32(const char* ns, const char* key, uint32_t value) = 0;
+
+  // Blob read: false if absent or unreadable; *out is then unchanged.
+  virtual bool getBlob(const char* ns, const char* key, std::string* out) = 0;
+
+  // Blob write: false if it did not persist. On failure the previous value is
+  // still readable (NVS writes the new blob before erasing the old one).
+  virtual bool putBlob(const char* ns, const char* key,
+                       const std::string& value) = 0;
 };

@@ -2,7 +2,8 @@
 
 **Status: partly implemented.** `/api/status`, `/api/zone/start`,
 `/api/zone/stop`, and `/api/update` exist as of Phase 1, and the `time` fields
-of `/api/status` as of Phase 2; their shapes below are
+of `/api/status` as of Phase 2, and the schedule, zone and config endpoints as
+of Phase 3; their shapes below are
 the implemented ones. The rest is the shape to design against, and this file
 should change with the firmware.
 
@@ -20,15 +21,15 @@ The frontend holds a base URL for each.
 | GET | `/api/status` | System state: active zone, time validity, current schedule, schedule version, uptime, reset reason, network, heap. |
 | POST | `/api/zone/start` | Start one zone for a bounded duration. *Implemented.* |
 | POST | `/api/zone/stop` | Stop the active zone, or a named one. *Implemented.* |
-| GET | `/api/schedules` | All stored schedules plus the active name. |
-| PUT | `/api/schedules` | Replace stored schedules. Validated before commit. |
-| PUT | `/api/schedule/active` | Set the active schedule. |
-| GET/PUT | `/api/schedule/enabled` | The on/off flag. |
+| GET | `/api/schedules` | All stored schedules plus the active name. *Implemented.* |
+| PUT | `/api/schedules` | Replace stored schedules. Validated before commit. *Implemented.* |
+| PUT | `/api/schedule/active` | Set the active schedule. *Implemented.* |
+| GET/PUT | `/api/schedule/enabled` | The on/off flag. *Implemented.* |
 | POST | `/api/schedule/run` | Run a schedule now. |
-| GET | `/api/zones` | Zone numbers and names. |
-| PUT | `/api/zones` | Update zone names. |
+| GET | `/api/zones` | Zone numbers and names. *Implemented.* |
+| PUT | `/api/zones` | Replace the zone list. *Implemented.* |
 | GET | `/api/logs` | The RAM ring buffer. |
-| GET/PUT | `/api/config` | Device config: schedule time, timezone, log sink address. |
+| GET/PUT | `/api/config` | Device config: schedule time, timezone. *Implemented.* Log sink address comes with Phase 5. |
 | POST | `/api/update` | Firmware upload (OTA). *Implemented.* |
 
 Notes:
@@ -106,6 +107,57 @@ fallback shows `false`.
 has not yet timed out, not a reading from the Pro-C: a run started at the Pro-C
 itself, or one from before a reboot, does not appear.
 
+### Settings (implemented)
+
+Zones, schedules, the active name, the on/off flag and config are stored as one
+document. Every PUT replaces one section, then validates the whole document and
+writes it to flash. If any step fails, nothing changes. Writes need
+`Content-Type: application/json`; anything else gets 415. Every 200 response
+carries `settings_hash`, also in `/api/status`, which changes exactly when the
+stored content changes.
+
+```json
+PUT /api/zones       {"zones": [{"zone": 1, "name": "Walkway Beds"}, ...]}
+PUT /api/schedules   {"schedules": [{"name": "Fall", "items": [
+                        {"zone": 1, "days": "TU:F", "duration_minutes": 30}, ...]}]}
+PUT /api/schedule/active   {"name": "Fall"}      null clears it
+PUT /api/schedule/enabled  {"enabled": true}
+PUT /api/config      {"start_hour": 7, "start_minute": 0,
+                      "timezone": "PST8PDT,M3.2.0,M11.1.0"}
+```
+
+GETs return the same shapes, plus `"ok": true` and `settings_hash`.
+`GET /api/schedules` also returns `active` and `enabled`.
+
+Rules, from `firmware/lib/settings/src/settings.cpp`:
+
+- **Zones:** numbers 1–48, unique; names 1–32 bytes.
+- **Schedules:** at most 10; names 1–32 bytes, unique.
+- **Items:** each zone must be a configured zone, at most once per schedule, with
+  `duration_minutes` 1–240. Item order is run order.
+- **Active:** must name an existing schedule. A PUT that would delete the
+  active schedule, or remove a zone a schedule uses, is refused.
+- **Config:** start time 00:00–23:59; timezone is a POSIX TZ string, 1–63 bytes.
+- **Size:** the stored document is capped at 4 KB (413 `too_large`). It is
+  stored compactly, so the real data (5 schedules × 8 zones) takes under 1 KB.
+
+Errors: 400 `invalid_body` (wrong shape or type) or `invalid_settings` (a rule
+above, with a message naming it), 413 `too_large`, 500 `storage_failed`.
+
+`/api/status` adds `schedule_source: "nvs"`, a top-level `settings_hash`, and:
+
+```json
+"settings": {"load": "loaded", "hash": "78a2614c", "zones": 8, "schedules": 5,
+             "active_schedule": "Late Fall", "enabled": false,
+             "start_time": "07:00", "today": [{"zone": 5, "duration_minutes": 20}]}
+```
+
+`load` is `empty` on a fresh device. It is `corrupt` (with `load_error`) if the
+stored document fails to parse or validate. Either way the device runs on safe
+defaults (nothing configured, disabled) until a successful write. `today` lists
+what the active schedule runs on today's local date, and appears only while
+`time_valid`.
+
 ## Node service
 
 | Method | Path | Purpose |
@@ -125,8 +177,14 @@ Carried over from v1, which the frontend already understands:
 - Weekdays: `M`, `TU`, `W`, `TH`, `F`, `SA`, `SU`, colon-joined (`M:W:F`).
 - `ALL` — every day.
 - `NONE` — never.
-- `EO` — every other day, by calendar date parity.
+- `EO` — every other day, strictly alternating: runs on local dates whose day
+  count since 1970-01-01 is even.
 
 `ALL`, `NONE`, and `EO` are exclusive; they cannot be combined with named days.
-Month-end parity for `EO` is a documented test case, not an implementation detail
-to rediscover.
+Input is case-insensitive (v1 data has `Tu:F`); the device returns canonical
+uppercase, Monday-first (`TU:F`).
+
+`EO` deliberately differs from v1, which used day-of-year parity and so ran on
+both Dec 31 and Jan 1 in non-leap years. Calendar-date parity would do the same
+after every 31-day month. No v1 schedule used `EO`. The boundaries are host
+tests in `firmware/test/test_day_pattern`.

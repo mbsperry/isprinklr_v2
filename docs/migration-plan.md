@@ -100,6 +100,14 @@ gate on it.
 
 ## Phase 3 — Schedules in NVS
 
+**Implemented and running on the device (0.4.0-phase3, 2026-11-15).** The v1
+zones, five schedules, active schedule (Late Fall) and 07:00 start were imported
+from the v1 API and survive a reboot; the scheduler is off, as in v1. Settings
+are one compact NVS document (under 1 KB for the real data, 4 KB cap), written
+all-or-nothing and identified by `settings_hash`. `EO` is strict alternation
+(see `api-contract.md`); no v1 schedule used it. Nothing runs schedules yet;
+that is Phase 4.
+
 - NVS namespace for schedules, active schedule name, zone names, on/off, config.
 - Schedule read/write endpoints, plus a version counter or hash in status so the
   server can detect drift.

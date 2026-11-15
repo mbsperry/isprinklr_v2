@@ -10,13 +10,7 @@
 namespace zone_api {
 namespace {
 
-Response error(int status, const char* code, const std::string& message) {
-  Response r{status, JsonDocument()};
-  r.body["ok"] = false;
-  r.body["error"] = code;
-  r.body["message"] = message;
-  return r;
-}
+using api::error;
 
 int statusFor(ZoneController::Result result) {
   switch (result) {

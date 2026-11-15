@@ -17,6 +17,10 @@ namespace {
 std::atomic<uint32_t> g_syncCount{0};
 std::atomic<uint32_t> g_lastSyncMs{0};
 
+// configTzTime and the status reader both use this; it changes only from the
+// async web task (config PUT) and is read from that same task.
+std::string g_timezone;
+
 timekeeping::SyncState syncState() {
   return timekeeping::SyncState{g_syncCount.load(), g_lastSyncMs.load()};
 }
@@ -35,17 +39,32 @@ void onSync(struct timeval*) {
 
 }  // namespace
 
-void begin() {
+void begin(const std::string& timezone) {
+  g_timezone = timezone;
   esp_sntp_set_time_sync_notification_cb(onSync);
 
   // configTzTime keeps the server pointers, so they must be static strings.
   // lwIP moves to the next server when one stops answering.
-  configTzTime(timekeeping::kPacificTz, config::kNtpServers[0],
+  configTzTime(g_timezone.c_str(), config::kNtpServers[0],
                config::kNtpServers[1], config::kNtpServers[2]);
 
   Serial.printf("[time] SNTP started: %s, %s, %s; TZ %s\n",
                 config::kNtpServers[0], config::kNtpServers[1],
-                config::kNtpServers[2], timekeeping::kPacificTz);
+                config::kNtpServers[2], g_timezone.c_str());
+}
+
+void setTimezone(const std::string& timezone) {
+  if (timezone == g_timezone) return;
+  g_timezone = timezone;
+  timekeeping::applyTimezone(g_timezone.c_str());
+  Serial.printf("[time] timezone now %s\n", g_timezone.c_str());
+}
+
+bool localNow(timekeeping::LocalTime* out) {
+  const time_t now = time(nullptr);
+  if (!timekeeping::isTimeValid(syncState(), now)) return false;
+  *out = timekeeping::toLocal(now);
+  return true;
 }
 
 bool timeValid() { return timekeeping::isTimeValid(syncState(), time(nullptr)); }
@@ -56,7 +75,7 @@ void describe(JsonObject obj) {
   const bool valid = timekeeping::isTimeValid(sync, now);
 
   obj["valid"] = valid;
-  obj["timezone"] = timekeeping::kPacificTz;
+  obj["timezone"] = g_timezone;
   obj["sync_count"] = sync.syncCount;
 
   if (sync.syncCount > 0) {

@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include "api_response.h"
 #include "zone_controller.h"
 
 // The HTTP-shaped half of zone control: request bodies in, status code and JSON
@@ -18,10 +19,7 @@
 // truncated 30 s to a stop command.
 namespace zone_api {
 
-struct Response {
-  int status;
-  JsonDocument body;
-};
+using Response = api::Response;
 
 // POST /api/zone/start   {"zone": 3, "duration_minutes": 10}
 Response start(ZoneController& zones, JsonVariantConst request, uint32_t nowMs);
