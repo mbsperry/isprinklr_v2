@@ -1,0 +1,48 @@
+name: firmware
+
+on:
+  push:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware.yml"
+  pull_request:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [ethernet, wifi]
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+      - name: Install PlatformIO
+        run: pip install --upgrade "platformio>=6.1.16"
+      - name: Build ${{ matrix.env }}
+        env:
+          # Dummy values so the wifi env compiles in CI; real ones come from the
+          # developer's shell.
+          ISPRINKLR_WIFI_SSID: ci-ssid
+          ISPRINKLR_WIFI_PASSWORD: ci-password
+        run: pio run -e ${{ matrix.env }}
+      - name: Show partition table and resolved packages
+        if: always()
+        run: |
+          pio pkg list -e ${{ matrix.env }} || true
+          pio run -e ${{ matrix.env }} -t envdump | grep -i partition || true
