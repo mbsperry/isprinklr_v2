@@ -1,7 +1,8 @@
 # API contract
 
 **Status: partly implemented.** `/api/status`, `/api/zone/start`,
-`/api/zone/stop`, and `/api/update` exist as of Phase 1; their shapes below are
+`/api/zone/stop`, and `/api/update` exist as of Phase 1, and the `time` fields
+of `/api/status` as of Phase 2; their shapes below are
 the implemented ones. The rest is the shape to design against, and this file
 should change with the firmware.
 
@@ -84,6 +85,22 @@ from the Pro-C to wait for anyway.
                "frames_sent": 4, "frames_dropped": 0,
                "last_sent_ago_ms": 9120, "last_frame_us": 645310}
 ```
+
+Phase 2 adds `time_valid` (top level) and:
+
+```json
+"time": {"valid": true, "timezone": "PST8PDT,M3.2.0,M11.1.0", "sync_count": 3,
+         "last_sync_ago_seconds": 1204,
+         "utc": "2026-11-15T15:27:45Z", "local": "2026-11-15T07:27:45-08:00",
+         "dst": false,
+         "servers": [{"name": "192.168.88.1", "reachable": false},
+                     {"name": "pool.ntp.org", "reachable": true},
+                     {"name": "time.google.com", "reachable": false}]}
+```
+
+`utc`, `local` and `dst` are `null`/absent until the first sync. `reachable`
+means the server answered at least once in lwIP's last eight polls; an unused
+fallback shows `false`.
 
 `commanded_zone` is `null` when idle. It is what this device last commanded and
 has not yet timed out, not a reading from the Pro-C: a run started at the Pro-C

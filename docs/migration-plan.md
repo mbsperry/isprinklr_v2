@@ -86,6 +86,13 @@ on-device tests reboot and commandeer the board.
 
 ## Phase 2 — Time
 
+**Implemented and running on the device (0.3.0-phase2, 2026-11-15).** First sync
+came from `pool.ntp.org`; the router does not answer NTP yet (see
+`firmware/README.md` for enabling it). Validity policy: valid after the first
+sync since boot, and stays valid until reboot even if later syncs fail, so a WAN
+outage does not stop watering. Nothing consumes `time_valid` yet; Phase 4 must
+gate on it.
+
 - SNTP via `configTime()`, timezone string for DST.
 - `time_valid` state that blocks execution and appears in the status response.
 - No hardware RTC. The internal RTC carries short outages; it does not survive a
