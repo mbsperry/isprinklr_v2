@@ -83,3 +83,7 @@ Recorded so they do not get relitigated.
 | Hardware count | One board; ESP stays installed in the basement |
 | OTA failure recovery | App-level boot guard, not IDF rollback |
 | Phase 0 / v1 compatibility | Not required — system is winterized |
+| Platform | pioarduino `55.03.311` (Arduino-ESP32 3.3.11); official registry 7.1.3 is Arduino 2.x |
+| Board memory type | `qio_opi` — confirmed on hardware, 8 MB PSRAM visible |
+| Device address | 192.168.88.54, static reservation on the router |
+| Deploy path | `POST /api/update` over the LAN; USB only for recovery |

@@ -2,8 +2,9 @@
 
 ESP32-S3 firmware. PlatformIO project.
 
-**Phase 0 is written but never compiled.** First step is `pio run -e ethernet` at
-a desk; see [`../docs/phase0-runbook.md`](../docs/phase0-runbook.md).
+**Phase 0 is installed (2026-11-14)** at 192.168.88.54. Ship changes over the
+network with the [routine OTA update](../docs/phase0-runbook.md#routine-ota-update);
+CI builds both envs on every firmware change.
 
 Phase 0 scope: network bring-up, a status endpoint, firmware upload over HTTP, and
 a boot guard that reverts to the previous OTA slot after three unhealthy boots.
