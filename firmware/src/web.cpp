@@ -25,6 +25,18 @@ constexpr size_t kMaxZoneBodyBytes = 256;
 // Set when an accepted upload needs a reboot; checked by tick().
 uint32_t g_restartAt = 0;
 
+// Upload state. Touched only from the async web task (upload and zone
+// handlers), never from loop(), so Update is never driven from two tasks.
+bool g_uploadRejected = false;
+uint32_t g_lastUploadChunkMs = 0;
+
+// An update is in flight and has not stalled. Update.isRunning() alone stays
+// true forever if the client drops mid-upload.
+bool updateActive() {
+  return Update.isRunning() &&
+         millis() - g_lastUploadChunkMs < config::kUploadStallMs;
+}
+
 const char* resetReasonName(esp_reset_reason_t reason) {
   switch (reason) {
     case ESP_RST_POWERON: return "power_on";
@@ -96,6 +108,15 @@ void addZoneRoute(const char* path,
                                                 JsonVariantConst, uint32_t)) {
   auto* h = new AsyncCallbackJsonWebHandler(
       path, [handler](AsyncWebServerRequest* request, JsonVariant& json) {
+        // An accepted update reboots shortly; a zone frame queued now could
+        // be cut off mid-bit. Refuse rather than start something we may not
+        // finish sending.
+        if (updateActive() || g_restartAt != 0) {
+          request->send(503, "application/json",
+                        "{\"ok\":false,\"error\":\"update_in_progress\","
+                        "\"message\":\"firmware update in progress; retry after reboot\"}");
+          return;
+        }
         const zone_api::Response r = handler(*g_zones, json, millis());
         Serial.printf("[web] %s -> %d\n", request->url().c_str(), r.status);
         sendJson(request, r.status, r.body);
@@ -106,6 +127,16 @@ void addZoneRoute(const char* path,
 }
 
 void sendUpdateResult(AsyncWebServerRequest* request) {
+  if (g_uploadRejected) {
+    AsyncWebServerResponse* response = request->beginResponse(
+        503, "application/json",
+        "{\"ok\":false,\"error\":\"busy\",\"message\":\"a zone command "
+        "or another upload is in progress; nothing was flashed, retry shortly\"}");
+    response->addHeader("Connection", "close");
+    request->send(response);
+    return;
+  }
+
   const bool ok = !Update.hasError();
 
   JsonDocument doc;
@@ -131,12 +162,33 @@ void sendUpdateResult(AsyncWebServerRequest* request) {
 void handleUpload(AsyncWebServerRequest* request, const String& filename,
                   size_t index, uint8_t* data, size_t len, bool final) {
   if (index == 0) {
+    g_lastUploadChunkMs = millis();
+
+    // Refuse to start while a frame is on the wire or queued: the reboot at the
+    // end could otherwise land mid-frame. Zone routes are refused while an
+    // update runs, so the bus cannot get busy again until this one finishes.
+    // A second upload while one is live is refused too; a stalled one is
+    // aborted and replaced.
+    g_uploadRejected = !hunter_bus::idle() || updateActive();
+    if (g_uploadRejected) {
+      Serial.println("[ota] refused: bus busy or another upload in progress");
+      return;
+    }
+
+    if (Update.isRunning()) {
+      Serial.println("[ota] aborting stalled previous upload");
+      Update.abort();
+    }
+
     Serial.printf("[ota] receiving %s\n", filename.c_str());
     if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
       Serial.printf("[ota] begin failed: %s\n", Update.errorString());
       return;
     }
   }
+
+  if (g_uploadRejected) return;
+  g_lastUploadChunkMs = millis();
 
   // A short write, a dropped connection, or a power cut leaves the running
   // firmware untouched — the boot partition only moves after Update.end(true)
@@ -188,7 +240,10 @@ void begin(ZoneController& zones) {
 }
 
 void tick() {
-  if (g_restartAt != 0 && millis() >= g_restartAt) {
+  // Never reboot mid-frame. An upload is refused unless the bus is idle and
+  // zone routes are refused from then on, so this should already hold; the
+  // check is the backstop.
+  if (g_restartAt != 0 && millis() >= g_restartAt && hunter_bus::idle()) {
     Serial.println("[ota] restarting into new image");
     Serial.flush();
     esp_restart();

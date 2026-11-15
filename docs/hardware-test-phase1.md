@@ -118,6 +118,23 @@ curl -s http://192.168.88.54/api/status | jq '.hunter_bus.frames_sent'
 
 Expect 400, 400, 415, and `frames_sent` unchanged from before this step.
 
+## 7b. Zone commands and OTA exclude each other
+
+Start a zone, then immediately try an upload while the frame is still going
+out. Run this from `firmware/` after step 1's build.
+
+```bash
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":1}' http://192.168.88.54/api/zone/start ; curl -s -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update | jq
+```
+
+Expect the upload to return 503 `"error": "busy"` with nothing flashed. Timing
+dependent: if the frame finished first, the upload succeeds and the device
+reboots, which is also fine. Then stop zone 1.
+
+```bash
+curl -s -H 'Content-Type: application/json' -d '{"zone":1}' http://192.168.88.54/api/zone/stop | jq
+```
+
 ## 8. Optional: ESP power loss mid-run
 
 Needs the basement. The board is PoE powered, so unplugging its Ethernet cable

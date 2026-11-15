@@ -1,6 +1,7 @@
 #include "hunter_bus.h"
 
 #include <Arduino.h>
+#include <driver/gpio.h>
 #include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -34,9 +35,10 @@ std::atomic<uint32_t> g_lastSentMs{0};
 std::atomic<uint32_t> g_lastDurationUs{0};
 
 // Plays the pulse train. Each data bit (a HIGH then a LOW, ~2.1 ms) runs with
-// interrupts off on this core, so preemption cannot stretch a 208 us pulse
-// into something that decodes as the other bit value. Between bits interrupts
-// are re-enabled. The interrupt watchdog (300 ms) is far above 2.1 ms.
+// interrupts off on this core only, so nothing scheduled on this core can
+// stretch a 208 us pulse into something that decodes as the other bit value.
+// The other core keeps running. Between bits interrupts are re-enabled. The
+// interrupt watchdog (300 ms) is far above 2.1 ms.
 void play(const hunter::PulseTrain& train) {
   std::size_t i = 0;
   while (i < train.count) {
@@ -50,7 +52,7 @@ void play(const hunter::PulseTrain& train) {
     }
 
     // A short pulse and the one after it form one bit (or the start pulse and
-    // its gap). Send them as a unit.
+    // its gap). Send them as a unit, interrupts off on this core only.
     portENTER_CRITICAL(&g_mux);
     digitalWrite(g_pin, p.high ? HIGH : LOW);
     delayMicroseconds(p.durationUs);
@@ -99,9 +101,15 @@ void begin(int pin) {
   if (g_queue != nullptr) return;
   g_pin = pin;
 
-  // Level before direction, so the line does not glitch HIGH when it becomes an
-  // output. A HIGH on REM is the start of a reset pulse.
-  digitalWrite(g_pin, LOW);
+  // A HIGH on REM is the start of a reset pulse, so the line must never float
+  // or glitch HIGH. Pull it down first, latch LOW in the output register via
+  // IDF, then enable the output driver. Not digitalWrite() before pinMode():
+  // in Arduino 3.x that may not set the level on a pin with no output config.
+  // This covers only the moment setup() reaches here; from reset until then
+  // the pin is in its hardware default state, which firmware cannot change.
+  const gpio_num_t gpio = static_cast<gpio_num_t>(g_pin);
+  gpio_set_pull_mode(gpio, GPIO_PULLDOWN_ONLY);
+  gpio_set_level(gpio, 0);
   pinMode(g_pin, OUTPUT);
   digitalWrite(g_pin, LOW);
 
@@ -128,6 +136,11 @@ bool enqueue(const hunter::Frame& frame) {
     return false;
   }
   return true;
+}
+
+bool idle() {
+  return !g_busy.load() &&
+         (g_queue == nullptr || uxQueueMessagesWaiting(g_queue) == 0);
 }
 
 void describe(JsonObject obj) {

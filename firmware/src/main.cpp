@@ -23,6 +23,10 @@ ZoneController g_zones(hunter_bus::enqueue);
 }  // namespace
 
 void setup() {
+  // First: hold the REM line LOW. Until this runs the pin is in its reset state,
+  // and a HIGH on REM is the start of a Hunter reset pulse.
+  hunter_bus::begin(config::kSmartPortPin);
+
   Serial.begin(115200);
   delay(200);  // let USB CDC enumerate before the first log line
   Serial.printf("\n[main] iSprinklr v2 firmware %s (phase 1)\n", FW_VERSION);
@@ -30,10 +34,6 @@ void setup() {
   // Before anything that can fail: if the last few boots never reached a healthy
   // state, this reverts to the previous OTA slot and does not return.
   boot_guard::begin();
-
-  // Before the network: the pin should be driven LOW as early as possible, and
-  // the bus must exist before the web server can queue frames to it.
-  hunter_bus::begin(config::kSmartPortPin);
 
   if (!net::begin()) {
     // Deliberately not fatal. The web server still starts, so a link that comes

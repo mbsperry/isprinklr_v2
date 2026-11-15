@@ -64,6 +64,13 @@ it is running, which is how to stop a run that outlived an ESP reboot.
 | 400 | `{"ok": false, "error": "invalid_zone" \| "invalid_duration" \| "invalid_body", "message": "..."}` | Nothing sent. `message` names the bounds. |
 | 409 | `{"ok": false, "error": "no_active_zone", ...}` | Stop with no zone given and nothing known to be running. |
 | 503 | `{"ok": false, "error": "bus_busy", ...}` | Bus queue full (4 frames, ~0.65 s each). Nothing changed; retry. |
+| 503 | `{"ok": false, "error": "update_in_progress", ...}` | A firmware upload is running or the device is about to reboot into one. Nothing sent. |
+
+Zone commands and firmware updates exclude each other so a reboot can never
+cut a frame mid-bit. `POST /api/update` returns 503 `"error": "busy"` (nothing
+flashed) if a frame is on the wire or queued, or another upload is live. An
+upload that sends nothing for 30 s counts as abandoned: it stops blocking zone
+commands, and the next upload aborts it.
 
 202, not 200: the bus write takes about 0.65 s and happens on its own task after
 the response. The SmartPort line is write-only, so there is no acknowledgement

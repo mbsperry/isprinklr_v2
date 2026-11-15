@@ -34,4 +34,9 @@ constexpr uint32_t kMaxFailedBoots = 3;
 // response actually reaches the client.
 constexpr uint32_t kRestartDelayMs = 1500;
 
+// An upload that has sent nothing for this long is treated as abandoned (client
+// dropped mid-upload): it stops blocking zone commands, and the next upload
+// aborts it before starting.
+constexpr uint32_t kUploadStallMs = 30000;
+
 }  // namespace config
