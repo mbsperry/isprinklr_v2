@@ -65,8 +65,9 @@ migration needs anyway.
 Pro-C passed: start, stop, self-ending runs, and a power cut mid-run. Zones
 above 12 were not exercised on hardware. See
 [`hardware-test-phase1.md`](hardware-test-phase1.md). Beyond the list below,
-Phase 1 also added the zone start/stop endpoints (needed to exercise the driver at all) and moved the bus write onto
-its own FreeRTOS task, which the plan had deferred to Phase 4.
+Phase 1 also added the zone start/stop endpoints (needed to exercise the
+driver at all) and moved the bus write onto its own FreeRTOS task, which the
+plan had deferred to Phase 4.
 
 - `[env:native]` with Unity. `lib_compat_mode = off` to override a `strict`
   setting inherited from `[env]`.
