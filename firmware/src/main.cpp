@@ -49,6 +49,7 @@ void setup() {
   {
     const settings::Config c = settings_service::with(
         [](SettingsStore& s) { return s.current().config; });
+    device_log::setLevel(c.logLevel);
     device_log::setSink(c.logHost, c.logPort);
   }
 

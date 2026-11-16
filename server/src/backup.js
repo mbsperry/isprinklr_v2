@@ -95,6 +95,7 @@ export async function fetchSettings(espUrl, { fetchImpl = fetch } = {}) {
     };
     if ('log_host' in config) restoreConfig.log_host = config.log_host;
     if ('log_port' in config) restoreConfig.log_port = config.log_port;
+    if ('log_level' in config) restoreConfig.log_level = config.log_level;
 
     return {
       format: FORMAT,

@@ -40,6 +40,7 @@ uint32_t g_bootId = 0;
 TaskHandle_t g_exportTask = nullptr;
 
 // Guarded by g_mutex.
+Level g_level = settings::kDefaultLogLevel;
 uint32_t g_sinkAddr = 0;  // network byte order; 0 = no sink
 uint16_t g_sinkPort = 0;
 std::string g_sinkText;
@@ -129,15 +130,20 @@ void startExport() {
 void write(Level level, const char* module, const char* message) {
   const uint32_t uptime = millis();
   const uint32_t epoch = epochNow();
+  bool recorded = false;
   {
     Lock lock;
-    g_ring.push(level, module, message, uptime, epoch);
+    // Syslog numbering: a larger value is less severe.
+    if (level <= g_level) {
+      g_ring.push(level, module, message, uptime, epoch);
+      recorded = true;
+    }
   }
   const char* tag = level == Level::kError  ? "E: "
                     : level == Level::kWarn ? "W: "
                                             : "";
   Serial.printf("[%s] %s%s\n", module, tag, message);
-  if (g_exportTask != nullptr) xTaskNotifyGive(g_exportTask);
+  if (recorded && g_exportTask != nullptr) xTaskNotifyGive(g_exportTask);
 }
 
 void log(Level level, const char* module, const char* format, ...) {
@@ -174,6 +180,20 @@ void setSink(const std::string& host, int port) {
   }
 }
 
+void setLevel(Level level) {
+  Level before;
+  {
+    Lock lock;
+    before = g_level;
+    g_level = level;
+  }
+  if (level != before) {
+    // Info, so the change itself is recorded unless the level is above it.
+    log(Level::kInfo, "log", "recording %s and more severe (was %s)",
+        logging::toString(level), logging::toString(before));
+  }
+}
+
 logs_api::Snapshot snapshot(const logs_api::Query& q) {
   Lock lock;
   return logs_api::take(g_ring, q);
@@ -188,6 +208,7 @@ void describe(JsonObject out) {
   } else {
     out["sink"] = nullptr;
   }
+  out["level"] = logging::toString(g_level);
   out["sent"] = g_sent;
   out["send_errors"] = g_sendErrors;
   out["lost"] = g_lost;

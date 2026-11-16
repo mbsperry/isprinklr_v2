@@ -200,7 +200,8 @@ PUT /api/schedule/active   {"name": "Fall"}      null clears it
 PUT /api/schedule/enabled  {"enabled": true}
 PUT /api/config      {"start_hour": 7, "start_minute": 0,
                       "timezone": "PST8PDT,M3.2.0,M11.1.0",
-                      "log_host": "192.0.2.21", "log_port": 5514}
+                      "log_host": "192.0.2.21", "log_port": 5514,
+                      "log_level": "info"}
 ```
 
 GETs return the same shapes, plus `"ok": true` and `settings_hash`.
@@ -216,11 +217,14 @@ Rules, from `firmware/lib/settings/src/settings.cpp`:
   active schedule, or remove a zone a schedule uses, is refused.
 - **Config:** start time 00:00–23:59; timezone is a POSIX TZ string, 1–63 bytes.
   `log_host` is empty (export off) or a dotted IPv4 address; `log_port` is
-  1–65535, default 5514. `start_hour`, `start_minute` and `timezone` are
-  required in a PUT; `log_host` and `log_port` are optional and keep their
-  current values when left out. A change takes effect at
-  once, with no reboot. With export off and the default port, they do not
-  affect `settings_hash`, so a device that never set them hashes as before.
+  1–65535, default 5514. `log_level` is `error`, `warn`, `info` or `debug`
+  (lowercase; default `debug`), see [Log level](#log-level). `start_hour`,
+  `start_minute` and `timezone` are required in a PUT; `log_host`, `log_port`
+  and `log_level` are optional and keep their current values when left out. A
+  change takes effect at once, with no reboot. At their defaults (export off,
+  port 5514, level `debug`) they do not affect `settings_hash`, so a device
+  that never set them hashes as before. Setting a non-default level changes
+  the hash.
 - **Size:** the stored document is capped at 4 KB (413 `too_large`). It is
   stored compactly, so the real data (5 schedules × 8 zones) takes under 1 KB.
 
@@ -272,6 +276,16 @@ was scheduled or manual. Once a day at the start time, `sched` says why a
 scheduled run did not start, for example when the scheduler is off. Refused
 requests log at `warn` with their reason.
 
+<a id="log-level"></a>**Log level.** `log_level` in `/api/config` sets the least severe level the
+device records. A line below it never enters the ring, so it is not in
+`GET /api/logs` and is never exported; it still goes to the USB serial console.
+`warn` records warnings and errors; `debug` (the default) records everything.
+It is stored in NVS with the rest of the config and applies from the next line
+logged. Debug lines are rare (bus retries, scheduler state changes), so
+`debug` costs little; `info` is the level to pick to drop them. The `?level=`
+query on `/api/logs` filters further within what was recorded. A UI can label
+the four values Error, Warning, Info and Debug, but sends the lowercase names.
+
 **UDP export.** When `log_host` is set, a low-priority task sends every line,
 including the backlog still in the ring, as RFC 5424 syslog over UDP
 (facility local0, MSGID is the module). It never waits on
@@ -284,10 +298,11 @@ time.
 
 ```json
 "logs": {"capacity": 200, "last_seq": 54, "sink": "192.0.2.21:5514",
-         "sent": 52, "send_errors": 0, "lost": 0, "boot_id": "c72c4971"}
+         "level": "debug", "sent": 52, "send_errors": 0, "lost": 0,
+         "boot_id": "c72c4971"}
 ```
 
-`sink` is null when export is off. `lost` counts lines overwritten in the ring
+`sink` is null when export is off. `level` is the recording level in effect. `lost` counts lines overwritten in the ring
 before the export task could send them; lines logged while export was off are
 not counted.
 

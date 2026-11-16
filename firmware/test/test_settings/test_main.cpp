@@ -369,6 +369,49 @@ void test_log_sink_config() {
   }
 }
 
+void test_log_level_config() {
+  MemoryKvStore kv;
+  SettingsStore store(kv);
+  store.load();
+  auto r = settings_api::getConfig(store);
+  TEST_ASSERT_EQUAL_STRING("debug", str(r.body["log_level"]).c_str());
+
+  r = settings_api::putConfig(store, body(
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_level":"warn"})"));
+  TEST_ASSERT_EQUAL_MESSAGE(200, r.status, str(r.body["message"]).c_str());
+  TEST_ASSERT_EQUAL_STRING("warn", str(r.body["log_level"]).c_str());
+  TEST_ASSERT_TRUE(store.current().config.logLevel == logging::Level::kWarn);
+
+  // Left out of a later PUT, it keeps its value; it survives a reload.
+  r = settings_api::putConfig(store, body(
+      R"({"start_hour":6,"start_minute":30,"timezone":"PST8PDT"})"));
+  TEST_ASSERT_EQUAL(200, r.status);
+  SettingsStore reloaded(kv);
+  TEST_ASSERT_EQUAL(Load::kLoaded, reloaded.load());
+  TEST_ASSERT_TRUE(reloaded.current().config.logLevel == logging::Level::kWarn);
+  TEST_ASSERT_EQUAL_STRING(store.hash().c_str(), reloaded.hash().c_str());
+
+  const char* levels[] = {"error", "warn", "info", "debug"};
+  for (const char* l : levels) {
+    const std::string b = std::string(
+        R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_level":")") + l + "\"}";
+    r = settings_api::putConfig(store, body(b.c_str()));
+    TEST_ASSERT_EQUAL_MESSAGE(200, r.status, l);
+    TEST_ASSERT_EQUAL_STRING(l, str(r.body["log_level"]).c_str());
+  }
+
+  const char* bad[] = {
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_level":"warning"})",
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_level":"INFO"})",
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_level":""})",
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_level":6})",
+  };
+  for (const char* b : bad) {
+    TEST_ASSERT_EQUAL_MESSAGE(400, settings_api::putConfig(store, body(b)).status, b);
+  }
+  TEST_ASSERT_TRUE(store.current().config.logLevel == logging::Level::kDebug);
+}
+
 void test_ipv4_parsing() {
   uint8_t ip[4];
   TEST_ASSERT_TRUE(settings::parseIpv4("0.0.0.0", ip));
@@ -400,12 +443,35 @@ void test_document_without_sink_is_unchanged() {
   settings::Settings back;
   TEST_ASSERT_TRUE(settings::parseDocument(withSink, &back, &error));
   TEST_ASSERT_EQUAL_STRING("192.0.2.21", back.config.logHost.c_str());
+  // The default level adds nothing, so the document above is unchanged too.
+  TEST_ASSERT_EQUAL_STRING(withSink.c_str(), settings::serializeDocument(back).c_str());
+}
+
+// A non-default level is appended after the sink, which is then written even
+// when it is the default.
+void test_document_with_log_level() {
+  settings::Settings s;
+  s.config.logLevel = logging::Level::kInfo;
+  const std::string text = settings::serializeDocument(s);
+  TEST_ASSERT_NOT_EQUAL(std::string::npos,
+                        text.find(R"("c":[7,0,"PST8PDT,M3.2.0,M11.1.0","",5514,"info"])"));
+  settings::Settings back;
+  std::string error;
+  TEST_ASSERT_TRUE_MESSAGE(settings::parseDocument(text, &back, &error), error.c_str());
+  TEST_ASSERT_TRUE(back.config.logLevel == logging::Level::kInfo);
+  TEST_ASSERT_EQUAL_STRING(text.c_str(), settings::serializeDocument(back).c_str());
+
+  const std::string badLevel =
+      R"({"f":2,"z":[],"s":[],"a":"","e":false,"c":[7,0,"PST8PDT","",5514,"loud"]})";
+  TEST_ASSERT_FALSE(settings::parseDocument(badLevel, &back, &error));
 }
 
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_log_sink_config);
+  RUN_TEST(test_log_level_config);
   RUN_TEST(test_ipv4_parsing);
+  RUN_TEST(test_document_with_log_level);
   RUN_TEST(test_document_without_sink_is_unchanged);
   RUN_TEST(test_fresh_store_is_empty_and_disabled);
   RUN_TEST(test_v1_data_imports_and_fits);

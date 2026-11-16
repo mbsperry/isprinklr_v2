@@ -20,8 +20,9 @@
 //   PUT  /api/schedule/enabled   {"enabled": true}
 //   GET  /api/zones              {zones, settings_hash}
 //   PUT  /api/zones              {"zones": [...]}
-//   GET  /api/config             {start_hour, start_minute, timezone, settings_hash}
-//   PUT  /api/config             all three fields
+//   GET  /api/config             {start_hour, start_minute, timezone, log_host,
+//                                 log_port, log_level, settings_hash}
+//   PUT  /api/config             start time and timezone required; log_* optional
 namespace settings_api {
 
 using Response = api::Response;

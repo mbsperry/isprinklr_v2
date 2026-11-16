@@ -232,6 +232,7 @@ void addSettingsPut(const char* path,
 void applyConfig(const SettingsStore& store) {
   const settings::Config& c = store.current().config;
   wallclock::setTimezone(c.timezone);
+  device_log::setLevel(c.logLevel);
   device_log::setSink(c.logHost, c.logPort);
 }
 

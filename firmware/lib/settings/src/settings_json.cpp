@@ -143,6 +143,14 @@ bool parseConfig(JsonVariantConst object, Config* out, std::string* error) {
     if (!readInt(object["log_port"], "log_port", "", &port, error)) return false;
     c.logPort = clampInt(port);
   }
+  if (!object["log_level"].isNull()) {
+    JsonVariantConst level = object["log_level"];
+    if (!level.is<const char*>() ||
+        !logging::parseLevel(level.as<const char*>(), &c.logLevel)) {
+      *error = "log_level must be one of \"error\", \"warn\", \"info\", \"debug\"";
+      return false;
+    }
+  }
   c.startHour = clampInt(hour);
   c.startMinute = clampInt(minute);
   *out = std::move(c);
@@ -177,6 +185,7 @@ void writeConfig(const Config& config, JsonObject out) {
   out["timezone"] = config.timezone;
   out["log_host"] = config.logHost;
   out["log_port"] = config.logPort;
+  out["log_level"] = logging::toString(config.logLevel);
 }
 
 // Storage format: compact arrays instead of the API's keyed objects, about a
@@ -186,6 +195,8 @@ void writeConfig(const Config& config, JsonObject out) {
 //    "a":"Fall","e":false,"c":[7,0,"PST8PDT,M3.2.0,M11.1.0"]}
 // The log sink is appended to "c" ([...,"192.0.2.21",5514]) only when it is
 // set, so a document written before Phase 5 serializes, and hashes, the same.
+// The log level follows it ([...,"192.0.2.21",5514,"info"]) only when it is
+// not the default, for the same reason.
 std::string serializeDocument(const Settings& s) {
   JsonDocument doc;
   doc["f"] = kFormatVersion;
@@ -213,10 +224,13 @@ std::string serializeDocument(const Settings& s) {
   c.add(s.config.startHour);
   c.add(s.config.startMinute);
   c.add(s.config.timezone);
-  if (!s.config.logHost.empty() || s.config.logPort != kDefaultLogPort) {
+  const bool levelSet = s.config.logLevel != kDefaultLogLevel;
+  if (levelSet || !s.config.logHost.empty() ||
+      s.config.logPort != kDefaultLogPort) {
     c.add(s.config.logHost);
     c.add(s.config.logPort);
   }
+  if (levelSet) c.add(logging::toString(s.config.logLevel));
   std::string out;
   serializeJson(doc, out);
   return out;
@@ -276,6 +290,12 @@ bool parseDocument(const std::string& text, Settings* out, std::string* error) {
     if (!c[3].is<const char*>() || !c[4].is<int>()) return fail("config");
     s.config.logHost = c[3].as<const char*>();
     s.config.logPort = c[4].as<int>();
+  }
+  if (c.size() > 5) {
+    if (!c[5].is<const char*>() ||
+        !logging::parseLevel(c[5].as<const char*>(), &s.config.logLevel)) {
+      return fail("config");
+    }
   }
 
   if (!validate(s, error)) return false;

@@ -10,7 +10,8 @@
 #include "log_level.h"
 #include "logs_api.h"
 
-// The device log (Phase 5). Every line goes three places:
+// The device log (Phase 5). Every line at or above the configured level goes
+// three places (lines below it go to Serial only):
 //   1. Serial, as before.
 //   2. A RAM ring of the last 200 lines, readable at GET /api/logs. Nothing is
 //      written to flash (decision 3).
@@ -41,6 +42,10 @@ void log(Level level, const char* module, const char* format, ...)
 
 // host: IPv4 literal, or empty for no export. Takes effect on the next send.
 void setSink(const std::string& host, int port);
+
+// Lines less severe than this are kept out of the ring (and so out of
+// /api/logs and the export). Serial still prints them. Default: debug.
+void setLevel(Level level);
 
 // Copies out of the ring under its lock.
 logs_api::Snapshot snapshot(const logs_api::Query& q);

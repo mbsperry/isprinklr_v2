@@ -30,7 +30,7 @@ function device({ hashes = ['78a2614c'], fail = null } = {}) {
         schedules: [{ name: 'Late Fall', items: [{ zone: 1, days: 'TH', duration_minutes: 20 }] }],
         active: 'Late Fall', enabled: false },
       '/api/config': { ok: true, settings_hash: hash, start_hour: 7, start_minute: 0,
-        timezone: 'PST8PDT,M3.2.0,M11.1.0', log_host: '', log_port: 5514 },
+        timezone: 'PST8PDT,M3.2.0,M11.1.0', log_host: '', log_port: 5514, log_level: 'info' },
       '/api/status': { firmware_version: '0.6.0-phase5', settings_hash: hash },
     };
     return Response.json(bodies[path]);
@@ -63,7 +63,7 @@ test('a backup holds the PUT bodies in restore order', async () => {
   // No ok/settings_hash leaking into a body the device would reject.
   assert.deepEqual(body['/api/config'], {
     start_hour: 7, start_minute: 0, timezone: 'PST8PDT,M3.2.0,M11.1.0',
-    log_host: '', log_port: 5514,
+    log_host: '', log_port: 5514, log_level: 'info',
   });
 });
 
