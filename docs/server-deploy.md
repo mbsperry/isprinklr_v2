@@ -140,11 +140,48 @@ instead.
 The order is for a blank board. On one that already has settings, a PUT can be
 refused, for example zones that would remove a zone an existing schedule uses.
 The device then changes nothing and its error names the rule; send the lines in
-whatever order clears it. The restore path has not been run against the
-device.
+whatever order clears it.
 
 The restored config includes `log_host`, so a restored board resumes sending
 logs to the server.
+
+### From the Mac
+
+The commands only need Node and a checkout, so a restore can run from the Mac,
+which has no server data of its own. From the top of the checkout, fetch a backup from the server (the
+response wraps it, so keep only `.backup`):
+
+```bash
+cd server && mkdir -p backups && curl -s http://<server-ip>:8080/api/backups/latest | jq .backup > backups/restore.json
+```
+
+`/api/backups` lists them all; put a timestamp in place of `latest` for an
+older one. If the server is down, copy a file from `~/isprinklr-data/backups`
+on it instead. To back up the device straight to the Mac, without the server:
+
+```bash
+cd server && ISPRINKLR_ESP_URL=http://$ISPRINKLR_DEVICE npm run -s backup
+```
+
+That writes to `server/backups/`, which git ignores. Then print the commands,
+read them, and paste them in order:
+
+```bash
+npm run -s restore-commands -- backups/restore.json
+```
+
+Check that `settings_hash` in `/api/status` matches the backup's
+`settings_hash`, and that `logs.sink` names the server.
+
+### Testing a restore
+
+Restoring a backup the device already matches changes nothing, so it tests
+the path safely. Take a fresh backup first: one from last night rolls back
+any change made since. Check its `settings_hash` matches the device, run the
+commands, then check the hash is unchanged and the scheduler is still off.
+This was done from the Mac on 2026-11-16 against firmware 0.6.2-phase6: all
+five PUTs returned 200, the hash was unchanged, the scheduler stayed off and
+no zone was commanded. A restore to a blank board has not been tested.
 
 ## Logs and troubleshooting
 
