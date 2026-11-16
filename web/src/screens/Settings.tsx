@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { useEffect, useState } from 'react';
-import { builtInControllerUrl, controllerUrl, setControllerUrl } from '../api/config';
 import { esp } from '../api/esp';
 import { server } from '../api/server';
 import type { Backup, LogLevel } from '../api/types';
@@ -20,11 +19,10 @@ const TIMEZONES: [string, string][] = [
 const LEVELS: [LogLevel, string][] = [['error', 'Error'], ['warn', 'Warning'], ['info', 'Info'], ['debug', 'Debug']];
 
 export default function Settings() {
-  const { config, refresh } = useController();
+  const { config } = useController();
   const [tz, setTz] = useState('');
   const [level, setLevel] = useState<LogLevel>('debug');
   const [logHost, setLogHost] = useState('');
-  const [address, setAddress] = useState(controllerUrl());
   const [backups, setBackups] = useState<Backup[] | null>(null);
   const [saved, setSaved] = useState(false);
   const { busy, error, run } = useAction();
@@ -51,12 +49,6 @@ export default function Settings() {
       log_host: logHost.trim(),
     }));
     if (ok) setSaved(true);
-  };
-
-  const saveAddress = () => {
-    setControllerUrl(address);
-    setAddress(controllerUrl());
-    void refresh();
   };
 
   const knownTz = TIMEZONES.some(([v]) => v === tz);
@@ -99,21 +91,6 @@ export default function Settings() {
           </div>
         </section>
       )}
-
-      <section>
-        <h2 className="label">This device</h2>
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="field">
-            <label htmlFor="ca">Controller address</label>
-            <input id="ca" className="input mono" value={address} placeholder={builtInControllerUrl()} onChange={(e) => setAddress(e.target.value)} />
-          </div>
-          <div className="row">
-            <button type="button" className="btn grow" onClick={() => { setAddress(''); setControllerUrl(''); setAddress(controllerUrl()); void refresh(); }}>Reset</button>
-            <button type="button" className="btn primary grow" onClick={saveAddress}>Save</button>
-          </div>
-          <p className="muted tiny" style={{ margin: 0 }}>Stored in this browser only.</p>
-        </div>
-      </section>
 
       <section>
         <h2 className="label">Backups</h2>

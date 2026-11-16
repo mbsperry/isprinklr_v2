@@ -6,11 +6,13 @@
 //   GET /api/health        row count, sink counters, last backup
 //   GET /api/backups       settings backups, newest first
 //   GET /api/backups/:ts   one backup ("latest" for the newest)
+//   /esp/api/...           forwarded to the controller (esp_proxy.js)
 //   anything else          web/'s static build
 
 import http from 'node:http';
 
 import { listBackups, readBackup } from './backup.js';
+import { PROXY_PREFIX } from './esp_proxy.js';
 import { MAX_QUERY_LIMIT } from './log_store.js';
 import { parseLevel } from './syslog.js';
 
@@ -69,11 +71,13 @@ function send(res, status, body) {
 //   backupStats: () => last backup outcome, for /api/health
 //   backupsDir:  where settings backups live; /api/backups is 404 without it
 //   staticHandler: from createStaticHandler; non-API paths are 404 without it
+//   espProxy:    from createEspProxy; /esp/ paths are 404 without it
 export function createHttpServer(store, {
   sinkStats = () => ({}),
   backupStats = () => null,
   backupsDir = null,
   staticHandler = null,
+  espProxy = null,
 } = {}) {
   return http.createServer(async (req, res) => {
     let url;
@@ -81,6 +85,16 @@ export function createHttpServer(store, {
       url = new URL(req.url, 'http://localhost');
     } catch {
       send(res, 400, { ok: false, error: 'bad_request' });
+      return;
+    }
+    if (url.pathname === PROXY_PREFIX || url.pathname.startsWith(`${PROXY_PREFIX}/`)) {
+      try {
+        if (espProxy) await espProxy(req, res, url);
+        else send(res, 404, { ok: false, error: 'not_found' });
+      } catch (err) {
+        if (res.headersSent) res.destroy();
+        else send(res, 500, { ok: false, error: 'internal', message: err.message });
+      }
       return;
     }
     const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');

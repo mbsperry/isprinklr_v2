@@ -103,14 +103,24 @@ changed, run the install command above again instead of the restart.
 
 The server serves `web/dist` as it finds it, and shows a placeholder until
 there is one, so a rebuild needs no restart. Building needs npm, unlike the
-server. Tell the build where the controller is, replacing `<device-ip>`:
+server. The build carries no addresses:
 
 ```bash
-cd ~/isprinklr_v2/web && npm ci && VITE_ESP_URL=http://<device-ip> npm run build
+cd ~/isprinklr_v2/web && npm ci && npm run build
 ```
 
-After a later `git pull`, run the same command again. Each browser can
-override the controller address in Settings, in case the controller moves.
+After a later `git pull`, run the same command again.
+
+The app reaches the controller through this server, at `ISPRINKLR_ESP_URL` in
+`~/isprinklr-data/server.env`. If the controller moves, change it there and
+restart the service.
+
+## Remote access
+
+Point a Cloudflare tunnel's public hostname at `http://localhost:8080` on this
+container, and put a Cloudflare Access policy on that hostname before turning
+it on. The app can start, stop and restart the controller, and has no login of
+its own. The controller is never exposed; only this server talks to it.
 
 ## Restoring a backup to the device
 

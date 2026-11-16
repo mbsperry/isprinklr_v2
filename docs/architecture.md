@@ -33,6 +33,9 @@ Serves the built React frontend and collects logs. Holds no authority over
 watering.
 
 - Serves `web/`'s static build directly. No nginx — unnecessary at this scale.
+- Forwards the frontend's controller calls (`/esp/api/...`) to the ESP, so the
+  browser only ever talks to one origin. UI traffic only: the ESP's schedule
+  never passes through it.
 - Listens for UDP syslog from the ESP and stores it with enough structure to
   filter by level, module, and time range.
 - Pulls the ESP's schedule nightly and writes a timestamped JSON backup. This is
@@ -40,9 +43,12 @@ watering.
 
 ### React frontend (`web/`)
 
-Vite, rebuilt from scratch. Talks to **two** hosts: the ESP for status, control,
-and schedule editing; the Node service for log history. Config carries two base
-URLs, not one.
+Vite, rebuilt from scratch. Uses **two** APIs: the ESP's for status, control,
+and schedule editing, and the Node service's for log history. Both are reached
+on the page's own origin; the Node service forwards `/esp/` to the ESP. That
+keeps the frontend working through an HTTPS tunnel, where the browser can
+neither reach the ESP's LAN address nor call plain `http` from an `https`
+page. The build carries no addresses.
 
 ## Safety properties
 
@@ -74,10 +80,18 @@ rather than discovering it on a morning when nothing ran.
 
 ## Network and access
 
-Everything runs on a trusted LAN. Remote access is the router's VPN, so there is
-no auth, no TLS, and no reverse proxy in the application. This is a deliberate
-choice that depends on the VPN; it is not a model for exposing any of this to the
-internet.
+Everything runs on a trusted LAN, and the application has no auth or TLS of its
+own. Remote access to the web UI is a Cloudflare tunnel (`cloudflared`) to the
+Node service, gated by Cloudflare Access (OAuth); the tunnel supplies TLS and
+login. Never publish the service through the tunnel without the Access policy:
+the UI can start, stop and restart the controller. The ESP itself is never
+exposed; only the Node service reaches it.
+
+Two checks guard the controller against other web pages a LAN browser happens
+to open. The Node proxy refuses any non-GET without an `X-iSprinklr: 1`
+header, which a cross-site page can't add without a CORS preflight that the
+server never grants. The ESP refuses non-GET requests from non-LAN origins
+(`api-contract.md`, "Browser access").
 
 ## Deliberate non-goals
 

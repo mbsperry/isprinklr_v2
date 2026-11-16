@@ -3,8 +3,8 @@
 
 // A fake controller and log server for working on the UI without the device.
 // Not a test of the firmware: shapes follow docs/api-contract.md, behaviour is
-// approximate. Controller on :8081 (with CORS, as the app expects), log server
-// on :8080 (what `npm run dev` proxies /api to).
+// approximate. Controller on :8081 (what `npm run dev` proxies /esp to), log
+// server on :8080 (what it proxies /api to).
 //
 //   MOCK_SPEED=60 npm run mock    runs zones 60x faster than real time
 //   MOCK_STATE=off npm run mock   starts with automatic watering off

@@ -3,11 +3,11 @@
 
 // The controller's API (docs/api-contract.md, "ESP32").
 
-import { controllerUrl } from './config';
+import { CONTROLLER_BASE } from './config';
 import { request } from './http';
 import type { DeviceConfig, DeviceLogEntry, LogLevel, Schedule, SchedulesResponse, Status, Zone } from './types';
 
-const u = (path: string) => controllerUrl() + path;
+const u = (path: string) => CONTROLLER_BASE + path;
 
 export const esp = {
   status: () => request<Status>(u('/api/status')),

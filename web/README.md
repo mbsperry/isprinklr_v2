@@ -10,14 +10,18 @@ for the build command on the server.
 
 ## Two hosts
 
-- **The controller**, for status, control and settings. Its address is fixed at
-  build time by `VITE_ESP_URL` (see `.env.example`) and can be overridden per
-  browser in Settings. The device answers CORS for local-network origins only
-  ([api-contract](../docs/api-contract.md#browser-access-cors)).
+- **The controller**, for status, control and settings. The browser reaches it
+  through the server: calls go to `/esp/api/...` on the page's own origin and
+  the server forwards them to the device
+  ([`esp_proxy.js`](../server/src/esp_proxy.js)). That is what lets the UI
+  work through an HTTPS tunnel and away from home. The device's address is
+  `ISPRINKLR_ESP_URL` in the server's `server.env`; the build needs no
+  settings.
 - **The server** that hosts the page, for log history and backups. Always the
-  page's own origin, so it needs no setting.
+  page's own origin.
 
-If the server is down the controller keeps watering; only this UI goes away.
+If the server is down the controller keeps watering on its own schedule; only
+this UI goes away.
 
 ## Screens
 
@@ -28,7 +32,7 @@ If the server is down the controller keeps watering; only this UI goes away.
 | `/watering` | The run in progress: countdown, stop, skip, what's next |
 | `/schedules`, `/schedules/:name` | Automatic watering on/off (with a confirm), start time, list and editor |
 | `/history` | Day by day, from the server's logs, or the controller's own when the server is down |
-| `/details`, `/zones`, `/settings` | The technical view: health, raw logs, restart, zone setup, time zone, log level, controller address, backups |
+| `/details`, `/zones`, `/settings` | The technical view: health, raw logs, restart, zone setup, time zone, log level, backups |
 
 Alerts and confirms are a heading and buttons, nothing more.
 
@@ -67,8 +71,10 @@ MOCK_SPEED=60 npm run mock
 and the dev server in another:
 
 ```bash
-VITE_ESP_URL=http://localhost:8081 npm run dev
+npm run dev
 ```
 
+The dev server proxies `/esp` to `ISPRINKLR_ESP_URL` (default the mock on
+:8081) and `/api` to `ISPRINKLR_SERVER_URL` (default the mock on :8080).
 `MOCK_SPEED` speeds zones up; `MOCK_STATE=off` starts with automatic watering
 off. The mock follows the API's shapes, not every rule the firmware enforces.

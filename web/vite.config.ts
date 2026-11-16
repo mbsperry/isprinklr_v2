@@ -4,13 +4,17 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
-// In development the log server's /api lives on another port; proxy it so the
-// app can use same-origin paths, exactly as it does when the server hosts it.
+// In development, proxy the same paths the server answers when it hosts the
+// app: /api to the log server, and /esp straight to the controller (the
+// server forwards /esp the same way; see server/src/esp_proxy.js). The
+// defaults match `npm run mock`.
+const espUrl = process.env.ISPRINKLR_ESP_URL ?? 'http://localhost:8081';
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
       '/api': process.env.ISPRINKLR_SERVER_URL ?? 'http://localhost:8080',
+      '/esp': { target: espUrl, rewrite: (p) => p.replace(/^\/esp/, '') },
     },
   },
   test: {
