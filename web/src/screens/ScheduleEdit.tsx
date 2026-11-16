@@ -59,7 +59,7 @@ function DayPicker({ value, onChange, idPrefix }: { value: string; onChange: (da
 export default function ScheduleEdit() {
   const { name: param } = useParams();
   const isNew = param === undefined;
-  const { schedules, zones, config, zoneName } = useController();
+  const { schedules, zones, config, zoneName, refresh } = useController();
   const navigate = useNavigate();
   const { busy, error, setError, run } = useAction();
 
@@ -121,8 +121,11 @@ export default function ScheduleEdit() {
       }
       if (renamingActive) await esp.setActive(clean.name);
     });
-    if (ok) navigate(`/schedules/${encodeURIComponent(clean.name)}`, { replace: true });
-    if (ok) setDraft(null);
+    if (!ok) return;
+    // Wait for the saved schedules to arrive before leaving, so the editor
+    // compares the draft against the new stored copy rather than the old one.
+    await refresh();
+    navigate(`/schedules/${encodeURIComponent(clean.name)}`, { replace: true });
   };
 
   const remove = async () => {
