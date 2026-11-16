@@ -20,7 +20,8 @@
 //   schedule  {"name": "Fall", "items": [{"zone": 1, "days": "TU:F",
 //                                         "duration_minutes": 20}]}
 //   config    {"start_hour": 7, "start_minute": 0,
-//              "timezone": "PST8PDT,M3.2.0,M11.1.0"}
+//              "timezone": "PST8PDT,M3.2.0,M11.1.0", "log_host": "",
+//              "log_port": 5514, "log_level": "debug"}
 namespace settings {
 
 bool parseZones(JsonVariantConst array, std::vector<Zone>* out,

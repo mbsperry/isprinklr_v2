@@ -31,8 +31,8 @@ constexpr uint32_t kNetworkTimeoutMs = 30000;
 
 // SNTP servers, tried in order; lwIP moves on when one stops answering.
 //
-// A LAN NTP server (the router) goes first when the build names one:
-//   export ISPRINKLR_NTP_SERVER=<router-ip>
+// A LAN NTP server (the router) goes first when the build names one, as
+// ntp_server in firmware/secrets.ini (gitignored; see secrets.example.ini).
 // It is a build setting so the site's address stays out of git. The router
 // keeps serving its own clock through a WAN outage, so a reboot during one can
 // still get the time; without it, time stays invalid (and nothing waters)

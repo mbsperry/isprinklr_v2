@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "day_pattern.h"
+#include "log_level.h"
 #include "settings_limits.h"
 #include "timekeeping.h"
 
@@ -40,6 +41,9 @@ struct Config {
   // can block, and nothing on the log path may. Empty: no export.
   std::string logHost;
   int logPort = kDefaultLogPort;
+  // Lines less severe than this are not recorded: not in the RAM ring, so not
+  // in /api/logs or the UDP export either. Serial still prints every line.
+  logging::Level logLevel = kDefaultLogLevel;
 };
 
 struct Settings {
@@ -58,7 +62,7 @@ struct Settings {
 //          duration_minutes within hunter_limits.h
 //   active: empty or the name of a schedule
 //   config: 00:00-23:59, timezone 1-63 bytes, log_host empty or a dotted
-//           IPv4 address, log_port 1-65535
+//           IPv4 address, log_port 1-65535, log_level one of error/warn/info/debug
 bool validate(const Settings& s, std::string* error);
 
 // Dotted-quad IPv4 ("192.0.2.21"): four decimal parts, 0-255, no leading
