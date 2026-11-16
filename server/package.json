@@ -12,6 +12,6 @@
     "start": "node src/main.js",
     "backup": "node src/backup_now.js",
     "restore-commands": "node src/restore_commands.js",
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.js\""
   }
 }
