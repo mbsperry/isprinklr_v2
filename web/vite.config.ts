@@ -9,10 +9,17 @@ import react from '@vitejs/plugin-react';
 // server forwards /esp the same way; see server/src/esp_proxy.js). The
 // defaults match `npm run mock`.
 const espUrl = process.env.ISPRINKLR_ESP_URL ?? 'http://localhost:8081';
+// Extra host names the dev server answers to, comma-separated, for opening it
+// from another machine by name. Site-specific, so it comes from the
+// environment rather than this public file.
+const devHosts = (process.env.ISPRINKLR_DEV_HOSTS ?? '')
+  .split(',')
+  .map((h) => h.trim())
+  .filter(Boolean);
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: ['isprinklr-v2.lan'],
+    allowedHosts: devHosts,
     proxy: {
       '/api': process.env.ISPRINKLR_SERVER_URL ?? 'http://localhost:8080',
       '/esp': { target: espUrl, rewrite: (p) => p.replace(/^\/esp/, '') },

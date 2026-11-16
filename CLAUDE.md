@@ -37,6 +37,13 @@ Two consequences that are easy to violate by accident:
 - Bounds (zone range, duration limits) live in one place, shared by validation and
   tests. v1 had three disagreeing sets.
 - NVS is not thread-safe: all access through one task or behind a mutex.
+- **The repo is public: no site details in committed files.** No LAN IP
+  addresses, LAN host names (`.lan`, `.local`, `.home.arpa`), usernames or home
+  directory paths, in code, config, docs or commit messages. Site values go in
+  gitignored files (`firmware/secrets.ini`, `server.env` on the server) or
+  environment variables read at build or run time; docs use placeholders such
+  as `$ISPRINKLR_DEVICE`, `<server-ip>` or `192.0.2.x`. Run
+  `scripts/check-site-details.sh` before committing; CI runs it on every push.
 - Docs: shell blocks meant for copy-paste contain no `#` comment lines; put
   explanation in prose. Matt pastes into interactive zsh, where `#` is a command.
 

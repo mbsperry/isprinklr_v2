@@ -7,9 +7,9 @@ network with the [routine OTA update](../docs/phase0-runbook.md#routine-ota-upda
 CI runs the host tests and builds both device envs on every firmware change.
 
 **Phase 1** adds the Hunter SmartPort driver, manual zone start/stop over HTTP,
-and host unit tests. It has not been run against the Pro-C yet; see
-[`hardware-test-phase1.md`](../docs/hardware-test-phase1.md). No timekeeping or
-schedule storage yet; those ship over OTA in Phases 2 and 3.
+and host unit tests. It passed its hardware test against the Pro-C on
+2026-11-15; see [`hardware-test-phase1.md`](../docs/hardware-test-phase1.md).
+Zones above 12 have not been run on hardware.
 
 **Phase 2** adds SNTP time (US Pacific, automatic DST) and `time_valid` in
 status. Running on the device since 2026-11-15.
@@ -22,6 +22,21 @@ config in NVS, with read/write endpoints. Running on the device since
 scheduled and manual. A daily trigger starts the active schedule. A checkpoint
 in NVS lets a run recover after a reboot (resume within 60 minutes, else skip).
 Cancel and skip work mid-run. Running on the device since 2026-11-15.
+
+**Phase 5** adds logging: a RAM ring buffer at `/api/logs`, fire-and-forget UDP
+syslog export, a log level in `/api/config` (`error`, `warn`, `info`, `debug`),
+and a fallback status page at `/`. Running on the device as `0.6.1-phase5`
+since 2026-11-15.
+
+**Phase 6** adds a browser origin check (`lib/api/src/cors.h`): LAN origins
+get CORS headers, and any other origin is refused non-GET requests, so a web
+page from elsewhere cannot send the device commands. The web UI itself goes
+through the server's proxy and needs no CORS. Built as `0.6.2-phase6`;
+whether it has been OTA'd shows in `/api/status`.
+
+Zones are limited to 1–10 (the installed Pro-C's count), so the settings
+document fits its 4 KB NVS cap; see decision 7 in
+[`open-decisions.md`](../docs/open-decisions.md).
 
 ### Build settings
 
@@ -125,7 +140,10 @@ clangd.
 | `src/hunter_bus.cpp` | REM pin and the FreeRTOS task that plays frames onto it |
 | `src/nvs_kv_store.cpp` | `KvStore` on NVS, behind a mutex |
 | `lib/settings/` | Settings model, day patterns, validation, JSON shapes, NVS store, route logic |
-| `lib/api/` | Shared response type for host-tested route logic |
+| `lib/api/` | Shared response type for host-tested route logic; the CORS origin check |
+| `lib/logging/` | Log ring buffer, levels, syslog line format, `/api/logs` logic |
+| `src/device_log.cpp` | The device's logger: ring buffer, serial, UDP export |
+| `include/status_page.h` | The fallback status page served at `/` |
 | `src/settings_service.cpp` | The device's settings store behind a mutex |
 | `lib/sequencer/` | Run queue (stop-pad-start, cancel, skip), daily trigger, checkpoint and recovery |
 | `src/sequencer_service.cpp` | The device's sequencer behind a mutex; trigger, checkpoint saves, recovery |
@@ -133,6 +151,6 @@ clangd.
 | `src/wallclock.cpp` | SNTP start-up and sync tracking |
 | `src/net.cpp` | Ethernet or WiFi bring-up, selected at compile time |
 | `src/boot_guard.cpp` | OTA slot revert, driven by `BootCounter` |
-| `src/web.cpp` | Routes: status, zone start/stop, firmware upload |
+| `src/web.cpp` | Routes: status, logs, zones, runs, settings, restart, firmware upload; CORS |
 | `src/main.cpp` | Startup order and the link-check loop |
 | `test/` | Unity host tests, one directory per suite |

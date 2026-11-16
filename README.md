@@ -39,17 +39,22 @@ The ESP32 stores schedules in NVS, syncs time over SNTP, runs the daily schedule
 itself, and checkpoints its position so a reboot mid-cycle is recoverable. It
 commands the Pro-C with a bounded duration, so the irrigation controller's own
 timer closes the valve even if the ESP vanishes. A Node service on the LAN serves
-the React UI and collects fire-and-forget UDP log lines from the ESP; it holds no
-authority over watering. Remote access is handled by the router's VPN, so there is
-no auth layer in the application.
+the React UI, forwards the UI's controller calls to the ESP, and collects
+fire-and-forget UDP log lines from the ESP; it holds no authority over watering.
+Remote access is a Cloudflare tunnel to the Node service, gated by Cloudflare
+Access, so there is no auth layer in the application.
 
 See [`docs/architecture.md`](docs/architecture.md) for the detail and
 [`docs/open-decisions.md`](docs/open-decisions.md) for what is still unsettled.
 
 ## Status
 
-Scaffolding. No implementation yet. See
-[`docs/migration-plan.md`](docs/migration-plan.md) for the phase order.
+Phases 0–6 are built and merged: OTA, the Hunter driver, time, schedules in NVS,
+the scheduling engine, logging, and the Node server and React frontend. The
+firmware runs on the installed board, and the server runs as a systemd service
+on a small Linux container. The scheduler is off on the device until spring, and
+v1 is kept as an archive until v2 has run a full watering season. See
+[`docs/migration-plan.md`](docs/migration-plan.md) for each phase's status.
 
 ## Hardware
 
@@ -57,7 +62,8 @@ Scaffolding. No implementation yet. See
   Ethernet over SPI), powered over PoE.
 - Hunter Pro-C irrigation controller, driven over its REM port via the Hunter
   SmartPort protocol.
-- GPIO 18 to REM; see `firmware/` for the full pin map once it exists.
+- GPIO 18 to REM; see [`firmware/README.md`](firmware/README.md#target) for the
+  full pin map.
 
 ## License
 

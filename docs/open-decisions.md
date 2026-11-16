@@ -46,22 +46,22 @@ watering season required before v1 is decommissioned. Volume is tiny (about
 50 MB a year even at 1,000 lines a day), so neither size nor flash wear
 decides it. If the server ends up on an SD card, batch inserts.
 
-## 4. Frontend: how much to keep
+## 4. Frontend: how much to keep — decided 2026-11-16
 
-**Blocks:** Phase 6.
+**Redone, not carried over** (built in Phase 6, PR 17). v1's frontend was
+~1,000 lines across 15 files on React Query + React Bootstrap. v2's `web/` is
+a new React + TypeScript app on Vite, mobile-first, with no UI library. v1's
+`use_v2_api` branch was used only as a reference for endpoint shapes. The
+screens follow Matt's brief: a friendly home page with a plain "connected"
+line rather than controller stats, since the household uses it too; running
+one zone as the main action; the scheduler on/off switch kept off the home
+page and behind a confirm; and alerts that are a heading and buttons only.
 
-v1's frontend is ~1,000 lines across 15 files, on React Query + React Bootstrap.
-The `use_v2_api` branch matches the current API shape and is a reasonable
-reference for endpoint contracts. Open question is whether component structure
-and styling carry over or get redone.
+## 5. History preservation — settled in practice
 
-## 5. History preservation
-
-**Blocks:** nothing; cheaper to decide before the first real commit.
-
-Copying v1 files in loses their `git log`. `git subtree add --prefix=<dir>`
-preserves it at the cost of a messier history. For a declared rewrite, copying is
-probably fine, with the v1 repos kept as archives.
+**Not preserved.** v2 was written fresh rather than copied or subtree-merged
+from v1, so there was no history to carry. The v1 repos stay as archives (see
+"Decommissioning v1" in `migration-plan.md`).
 
 ## 6. Commands during a schedule run — decided 2026-11-15
 
@@ -142,11 +142,15 @@ Recorded so they do not get relitigated.
 | Time source | SNTP; no battery-backed RTC |
 | Log transport | UDP, fire-and-forget; never HTTP |
 | Log diagnostics on-device | RAM ring buffer, no flash |
-| Auth / TLS | None; router VPN is the boundary |
+| Auth / TLS | None in the app; remote access is a Cloudflare tunnel behind Cloudflare Access |
+| Browser to controller | Same-origin: the Node server forwards `/esp/` to the ESP; ESP refuses non-GET from non-LAN origins |
 | Python API | Replaced by a Node service |
 | nginx | Dropped; Node serves the frontend |
 | Repo structure | Monorepo: firmware, web, server, docs |
 | Frontend serving | Server-side, not from the ESP |
+| Frontend | Rebuilt on Vite + React + TypeScript, mobile-first (decision 4) |
+| Server host | Small Linux container, systemd service; site settings in an env file outside the repo |
+| Build settings | Router NTP address and Wi-Fi credentials in gitignored `firmware/secrets.ini` |
 | Build system | PlatformIO, platform version pinned |
 | Firmware updates | OTA over HTTP; `espota` rejected |
 | Editor / IDE | CLI-driven; no VS Code requirement |
