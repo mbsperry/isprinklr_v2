@@ -12,6 +12,7 @@ const espUrl = process.env.ISPRINKLR_ESP_URL ?? 'http://localhost:8081';
 export default defineConfig({
   plugins: [react()],
   server: {
+    allowedHosts: ['isprinklr-v2.lan'],
     proxy: {
       '/api': process.env.ISPRINKLR_SERVER_URL ?? 'http://localhost:8080',
       '/esp': { target: espUrl, rewrite: (p) => p.replace(/^\/esp/, '') },

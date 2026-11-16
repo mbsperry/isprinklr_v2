@@ -201,7 +201,7 @@ a.zone-btn:hover { color: var(--ink); }
   border: none;
   text-align: center;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   -moz-appearance: textfield;
   appearance: textfield;
 }
@@ -362,7 +362,7 @@ a.zone-btn:hover { color: var(--ink); }
   border-radius: 999px;
   border: 1px solid #c9cdc5;
   background: var(--card);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   white-space: nowrap;
 }
