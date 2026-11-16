@@ -1,14 +1,15 @@
 # Server deployment
 
 The Node server runs on a Proxmox container: `isprinklr-v2.lan`, 192.168.88.43,
-Ubuntu 24.04, user `isprinklr-v2` (no passwordless sudo). It has Node 24, pm2,
-git, gh (signed in as mbsperry) and curl, and its clock is set to
+Ubuntu 24.04, user `isprinklr-v2` (no passwordless sudo). It has Node 24 (at
+`/usr/bin/node`), git, gh (signed in as mbsperry) and curl, and its clock is set to
 America/Los_Angeles, which is the time the nightly jobs run in.
 
 Nothing on the container is load-bearing. If it is down, the ESP keeps
 watering; only the web UI, log history and new backups stop.
 
-One pm2 process, `isprinklr`, does all three jobs:
+One systemd service, `isprinklr`, does all three jobs. It restarts on
+failure, starts at boot, and logs to journald.
 
 | | |
 |---|---|
@@ -17,7 +18,7 @@ One pm2 process, `isprinklr`, does all three jobs:
 | Settings backup | from 192.168.88.54 at startup and at 03:45 nightly, into `~/isprinklr-data/backups/` |
 
 Data sits in `~/isprinklr-data`, outside the checkout, so re-cloning cannot
-lose it. Settings are in `server/ecosystem.config.cjs`.
+lose it. Settings are in [`server/isprinklr.service`](../server/isprinklr.service).
 
 ## First install
 
@@ -35,19 +36,10 @@ cd ~/isprinklr_v2/server
 npm test
 ```
 
-```bash
-pm2 start ecosystem.config.cjs
-```
+Then install and start the service. This needs sudo:
 
 ```bash
-pm2 save
-```
-
-Then make pm2 start at boot. `pm2 startup` prints one `sudo env PATH=...`
-command; run what it prints, which asks for the password.
-
-```bash
-pm2 startup systemd
+sudo cp ~/isprinklr_v2/server/isprinklr.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now isprinklr
 ```
 
 Check it. The health response should show a `backup.last_timestamp`, and the
@@ -81,10 +73,12 @@ climbing, and `/api/status` on the device should show
 ## Updating
 
 ```bash
-cd ~/isprinklr_v2 && git pull && pm2 restart isprinklr
+cd ~/isprinklr_v2 && git pull && sudo systemctl restart isprinklr
 ```
 
-Each restart also takes a backup, which is harmless.
+Each restart also takes a backup, which is harmless. If the unit file itself
+changed, copy it again and run `sudo systemctl daemon-reload` before the
+restart.
 
 ## When the frontend exists
 
@@ -118,11 +112,11 @@ logs to the server.
 ## Logs and troubleshooting
 
 ```bash
-pm2 logs isprinklr --lines 100
+journalctl -u isprinklr -n 100
 ```
 
 ```bash
-pm2 describe isprinklr
+systemctl status isprinklr
 ```
 
 A backup that fails (the ESP offline, say) is retried every 30 minutes, four

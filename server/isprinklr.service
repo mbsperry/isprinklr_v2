@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 Matt Sperry
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# systemd unit for the server on the Proxmox container
+# (docs/server-deploy.md). Logs go to journald: journalctl -u isprinklr
+#
+# Data lives outside the checkout, under ~/isprinklr-data, so a fresh clone
+# or a `git clean` cannot touch log history or backups.
+
+[Unit]
+Description=iSprinklr v2 server (web UI, UDP log sink, settings backup)
+Documentation=https://github.com/mbsperry/isprinklr_v2/blob/main/docs/server-deploy.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=isprinklr-v2
+Group=isprinklr-v2
+WorkingDirectory=/home/isprinklr-v2/isprinklr_v2/server
+Environment=ISPRINKLR_DB=/home/isprinklr-v2/isprinklr-data/logs.sqlite
+Environment=ISPRINKLR_BACKUP_DIR=/home/isprinklr-v2/isprinklr-data/backups
+Environment=ISPRINKLR_WEB_DIR=/home/isprinklr-v2/isprinklr_v2/web/dist
+Environment=ISPRINKLR_ESP_URL=http://192.168.88.54
+Environment=ISPRINKLR_HTTP_PORT=8080
+Environment=ISPRINKLR_UDP_PORT=5514
+# node:sqlite prints an ExperimentalWarning on every start; it is not news.
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/main.js
+Restart=on-failure
+RestartSec=5
+# main.js flushes pending log lines on SIGTERM.
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
