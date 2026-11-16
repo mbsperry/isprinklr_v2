@@ -2,7 +2,7 @@
 
 Run 2026-11-15 on the installed ESP32 with firmware `0.6.0-phase5`, installed
 by OTA (boot `c72c4971`, running partition `app1`). Driven from the Mac
-(192.168.88.21) over the LAN. The system is winterized, so zones clicked dry
+over the LAN. The system is winterized, so zones clicked dry
 valves, and the scheduler stayed off throughout.
 
 The log sink was `server/` run by hand on the Mac (`npm start`) with a scratch
@@ -18,8 +18,8 @@ router. `missed` stayed 0: the ring held all 54 lines of the test (capacity
 
 ## UDP export
 
-`PUT /api/config` with `log_host` 192.168.88.21 and port 5514 turned export on
-at once, with no reboot (`log: UDP export to 192.168.88.21:5514`). The export
+`PUT /api/config` with `log_host` set to the Mac and port 5514 turned export on
+at once, with no reboot (`log: UDP export to <mac-ip>:5514`). The export
 task then sent the backlog from seq 1, so the server got the boot lines too.
 Lines without a device time were stored with `time_source` `estimated` (from
 the line's uptime and the first timed line), the rest as `device`.

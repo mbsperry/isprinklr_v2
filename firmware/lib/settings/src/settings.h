@@ -61,7 +61,7 @@ struct Settings {
 //           IPv4 address, log_port 1-65535
 bool validate(const Settings& s, std::string* error);
 
-// Dotted-quad IPv4 ("192.168.88.21"): four decimal parts, 0-255, no leading
+// Dotted-quad IPv4 ("192.0.2.21"): four decimal parts, 0-255, no leading
 // zeros, nothing else.
 bool parseIpv4(const std::string& text, uint8_t out[4]);
 

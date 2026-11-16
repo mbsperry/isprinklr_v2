@@ -6,8 +6,9 @@ after this goes over the network.
 **Status: completed 2026-11-14.** Flashed over USB, then verified on hardware:
 W5500 up at 100 Mbps full duplex, PSRAM detected (~8.6 MB free heap), OTA in both
 directions (app0 → app1 → app0), and the boot guard reverting a never-healthy
-image after three boots. The device is at **192.168.88.54** (static reservation
-on the router). For day-to-day updates, skip to
+image after three boots. The device has a static address (a reservation
+on the router). Commands below use `$ISPRINKLR_DEVICE` for it, so set
+that in the shell first, for example in `~/.zshrc`. For day-to-day updates, skip to
 [Routine OTA update](#routine-ota-update).
 
 The steps below are kept as the record of the install and as the procedure if
@@ -120,7 +121,7 @@ revert after three boots.
 ### 6. Verify status
 
 ```bash
-curl -s http://192.168.88.54/api/status | jq
+curl -s http://$ISPRINKLR_DEVICE/api/status | jq
 ```
 
 Check:
@@ -141,7 +142,7 @@ rebuild (15 s or more), so a 3-second build means the old version was rebuilt.
 sed -i '' 's/0\.1\.0-phase0/0.1.1-phase0/' platformio.ini
 grep FW_VERSION platformio.ini
 pio run -e ethernet
-curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://$ISPRINKLR_DEVICE/api/update
 ```
 
 Expect `{"ok":true,"message":"update accepted, rebooting"}`, then the device
@@ -149,7 +150,7 @@ reboots. Confirm the new version:
 
 ```bash
 sleep 20
-curl -s http://192.168.88.54/api/status | jq '.firmware_version, .boot.running_partition'
+curl -s http://$ISPRINKLR_DEVICE/api/status | jq '.firmware_version, .boot.running_partition'
 ```
 
 `running_partition` should now read `app1`.
@@ -172,7 +173,7 @@ it over OTA, and watch the monitor:
 sed -i '' 's/boot_guard::markHealthy();/\/\/ &/' src/main.cpp
 sed -i '' 's/0\.1\.1-phase0/0.1.2-noguard/' platformio.ini
 pio run -e ethernet
-curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://$ISPRINKLR_DEVICE/api/update
 pio device monitor -p $PORT
 ```
 
@@ -185,7 +186,7 @@ step 5, so confirm with `/api/status` instead. Then restore the real firmware:
 ```bash
 git checkout src/main.cpp platformio.ini
 pio run -e ethernet
-curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://$ISPRINKLR_DEVICE/api/update
 ```
 
 Result on 2026-11-14: `0.1.2-noguard` on app1 reverted to `0.1.1-phase0` on app0
@@ -197,7 +198,7 @@ the downside is a trip downstairs rather than a dead controller.
 ### 10. Leave
 
 Reinstall, confirm `/api/status` answers from upstairs, and note the IP. The
-device has a static reservation at 192.168.88.54.
+device has a static reservation on the router.
 
 ---
 
@@ -210,9 +211,9 @@ the LAN or the router VPN:
 export PATH="$HOME/.local/bin:$PATH"
 cd firmware
 pio run -e ethernet
-curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://$ISPRINKLR_DEVICE/api/update
 sleep 20
-curl -s http://192.168.88.54/api/status | jq '.firmware_version, .boot'
+curl -s http://$ISPRINKLR_DEVICE/api/status | jq '.firmware_version, .boot'
 ```
 
 Expect `{"ok":true,...}` from the upload, then the new `firmware_version`,

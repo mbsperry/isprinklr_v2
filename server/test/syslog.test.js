@@ -13,7 +13,7 @@ test('parses a line from the device with a valid clock', () => {
   const row = parseSyslog(
     '<134>1 2026-11-15T22:40:20Z isprinklr isprinklr - run ' +
     '[isp@32473 seq="42" up="81234" boot="1a2b3c4d"] zone 3 started for 10 min',
-    received, '192.168.88.54');
+    received, '192.0.2.54');
   assert.deepEqual(row, {
     time: Date.parse('2026-11-15T22:40:20Z'),
     timeSource: 'device',
@@ -58,11 +58,11 @@ test('no structured data and an empty message', () => {
 });
 
 test('anything else is kept as unparsed', () => {
-  const row = parseSyslog('<30>Nov 15 14:40:20 router dhcp: lease', received, '192.168.88.1');
+  const row = parseSyslog('<30>Nov 15 14:40:20 router dhcp: lease', received, '192.0.2.1');
   assert.equal(row.module, 'unparsed');
   assert.equal(row.severity, 6);
   assert.equal(row.message, '<30>Nov 15 14:40:20 router dhcp: lease');
-  assert.equal(row.host, '192.168.88.1');
+  assert.equal(row.host, '192.0.2.1');
   assert.equal(parseSyslog('hello', received).severity, 6);
 });
 

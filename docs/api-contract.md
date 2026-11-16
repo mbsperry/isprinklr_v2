@@ -170,7 +170,7 @@ Phase 2 adds `time_valid` (top level) and:
          "last_sync_ago_seconds": 1204,
          "utc": "2026-11-15T15:27:45Z", "local": "2026-11-15T07:27:45-08:00",
          "dst": false,
-         "servers": [{"name": "192.168.88.1", "reachable": false},
+         "servers": [{"name": "192.0.2.1", "reachable": false},
                      {"name": "pool.ntp.org", "reachable": true},
                      {"name": "time.google.com", "reachable": false}]}
 ```
@@ -200,7 +200,7 @@ PUT /api/schedule/active   {"name": "Fall"}      null clears it
 PUT /api/schedule/enabled  {"enabled": true}
 PUT /api/config      {"start_hour": 7, "start_minute": 0,
                       "timezone": "PST8PDT,M3.2.0,M11.1.0",
-                      "log_host": "192.168.88.21", "log_port": 5514}
+                      "log_host": "192.0.2.21", "log_port": 5514}
 ```
 
 GETs return the same shapes, plus `"ok": true` and `settings_hash`.
@@ -283,7 +283,7 @@ time.
 `/api/status` adds:
 
 ```json
-"logs": {"capacity": 200, "last_seq": 54, "sink": "192.168.88.21:5514",
+"logs": {"capacity": 200, "last_seq": 54, "sink": "192.0.2.21:5514",
          "sent": 52, "send_errors": 0, "lost": 0, "boot_id": "c72c4971"}
 ```
 
@@ -319,7 +319,7 @@ next page.
  "entries": [{"id": 52, "time": "2026-11-15T23:39:19.000Z",
               "time_source": "device", "received": "2026-11-15T23:39:19.012Z",
               "level": "debug", "module": "hunter",
-              "message": "...", "host": "192.168.88.54", "boot": "c72c4971",
+              "message": "...", "host": "192.0.2.54", "boot": "c72c4971",
               "seq": 52, "uptime_ms": 2766354}]}
 ```
 

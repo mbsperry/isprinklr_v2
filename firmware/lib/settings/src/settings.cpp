@@ -89,7 +89,7 @@ bool validate(const Settings& s, std::string* error) {
   }
   uint8_t ip[4];
   if (!c.logHost.empty() && !parseIpv4(c.logHost, ip)) {
-    *error = "config: log_host must be empty or an IPv4 address like 192.168.88.21";
+    *error = "config: log_host must be empty or an IPv4 address like 192.0.2.21";
     return false;
   }
   if (c.logPort < 1 || c.logPort > 65535) {

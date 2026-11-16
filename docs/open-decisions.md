@@ -108,7 +108,7 @@ Recorded so they do not get relitigated.
 | Phase 0 / v1 compatibility | Not required — system is winterized |
 | Platform | pioarduino `55.03.311` (Arduino-ESP32 3.3.11); official registry 7.1.3 is Arduino 2.x |
 | Board memory type | `qio_opi` — confirmed on hardware, 8 MB PSRAM visible |
-| Device address | 192.168.88.54, static reservation on the router |
+| Device address | Static reservation on the router; kept out of the repo |
 | Reboot mid-run | Resume within 60 minutes of when the next zone was due, else skip (decision 1) |
 | Server log storage | SQLite, 12 months, nightly prune (decision 3) |
 | Commands during a run | One queue; manual appends; cancel and skip; manual not gated (decision 6) |

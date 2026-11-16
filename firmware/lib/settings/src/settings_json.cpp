@@ -184,7 +184,7 @@ void writeConfig(const Config& config, JsonObject out) {
 //   {"f":2,"z":[[1,"Walkway Beds"],...],
 //    "s":[["Fall",[[1,"TU:F",30],...]],...],
 //    "a":"Fall","e":false,"c":[7,0,"PST8PDT,M3.2.0,M11.1.0"]}
-// The log sink is appended to "c" ([...,"192.168.88.21",5514]) only when it is
+// The log sink is appended to "c" ([...,"192.0.2.21",5514]) only when it is
 // set, so a document written before Phase 5 serializes, and hashes, the same.
 std::string serializeDocument(const Settings& s) {
   JsonDocument doc;

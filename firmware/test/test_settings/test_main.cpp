@@ -329,21 +329,21 @@ void test_log_sink_config() {
   TEST_ASSERT_EQUAL(settings::kDefaultLogPort, r.body["log_port"].as<int>());
 
   r = settings_api::putConfig(store, body(
-      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.168.88.21","log_port":5514})"));
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.0.2.21","log_port":5514})"));
   TEST_ASSERT_EQUAL_MESSAGE(200, r.status, str(r.body["message"]).c_str());
-  TEST_ASSERT_EQUAL_STRING("192.168.88.21", str(r.body["log_host"]).c_str());
+  TEST_ASSERT_EQUAL_STRING("192.0.2.21", str(r.body["log_host"]).c_str());
 
   // Leaving the sink out of a later PUT keeps it.
   r = settings_api::putConfig(store, body(
       R"({"start_hour":6,"start_minute":30,"timezone":"PST8PDT"})"));
   TEST_ASSERT_EQUAL(200, r.status);
-  TEST_ASSERT_EQUAL_STRING("192.168.88.21", store.current().config.logHost.c_str());
+  TEST_ASSERT_EQUAL_STRING("192.0.2.21", store.current().config.logHost.c_str());
   TEST_ASSERT_EQUAL(6, store.current().config.startHour);
 
   // And it survives a reload.
   SettingsStore reloaded(kv);
   TEST_ASSERT_EQUAL(Load::kLoaded, reloaded.load());
-  TEST_ASSERT_EQUAL_STRING("192.168.88.21", reloaded.current().config.logHost.c_str());
+  TEST_ASSERT_EQUAL_STRING("192.0.2.21", reloaded.current().config.logHost.c_str());
   TEST_ASSERT_EQUAL(5514, reloaded.current().config.logPort);
   TEST_ASSERT_EQUAL_STRING(store.hash().c_str(), reloaded.hash().c_str());
 
@@ -355,10 +355,10 @@ void test_log_sink_config() {
 
   const char* bad[] = {
       R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"server.lan"})",
-      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.168.88"})",
-      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.168.88.256"})",
-      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.168.088.1"})",
-      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":" 192.168.88.1"})",
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.0.2"})",
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.0.2.256"})",
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":"192.0.02.1"})",
+      R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":" 192.0.2.1"})",
       R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_host":5})",
       R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_port":0})",
       R"({"start_hour":7,"start_minute":0,"timezone":"PST8PDT","log_port":65536})",
@@ -373,7 +373,7 @@ void test_ipv4_parsing() {
   uint8_t ip[4];
   TEST_ASSERT_TRUE(settings::parseIpv4("0.0.0.0", ip));
   TEST_ASSERT_TRUE(settings::parseIpv4("255.255.255.255", ip));
-  TEST_ASSERT_TRUE(settings::parseIpv4("192.168.88.21", ip));
+  TEST_ASSERT_TRUE(settings::parseIpv4("192.0.2.21", ip));
   TEST_ASSERT_EQUAL_UINT8(192, ip[0]);
   TEST_ASSERT_EQUAL_UINT8(21, ip[3]);
   const char* bad[] = {"", "1.2.3", "1.2.3.4.5", "1.2.3.", ".1.2.3", "1..2.3",
@@ -393,13 +393,13 @@ void test_document_without_sink_is_unchanged() {
   TEST_ASSERT_TRUE_MESSAGE(settings::parseDocument(phase4, &s, &error), error.c_str());
   TEST_ASSERT_EQUAL_STRING(phase4.c_str(), settings::serializeDocument(s).c_str());
 
-  s.config.logHost = "192.168.88.21";
+  s.config.logHost = "192.0.2.21";
   const std::string withSink = settings::serializeDocument(s);
   TEST_ASSERT_NOT_EQUAL(std::string::npos,
-                        withSink.find(R"("c":[7,0,"PST8PDT,M3.2.0,M11.1.0","192.168.88.21",5514])"));
+                        withSink.find(R"("c":[7,0,"PST8PDT,M3.2.0,M11.1.0","192.0.2.21",5514])"));
   settings::Settings back;
   TEST_ASSERT_TRUE(settings::parseDocument(withSink, &back, &error));
-  TEST_ASSERT_EQUAL_STRING("192.168.88.21", back.config.logHost.c_str());
+  TEST_ASSERT_EQUAL_STRING("192.0.2.21", back.config.logHost.c_str());
 }
 
 int main() {
