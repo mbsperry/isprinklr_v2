@@ -76,5 +76,8 @@ npm run dev
 
 The dev server proxies `/esp` to `ISPRINKLR_ESP_URL` (default the mock on
 :8081) and `/api` to `ISPRINKLR_SERVER_URL` (default the mock on :8080).
+To open the dev server from another machine by host name, list the names
+in `ISPRINKLR_DEV_HOSTS`, comma-separated, for example
+`ISPRINKLR_DEV_HOSTS=myhost.lan npm run dev`; Vite refuses other names.
 `MOCK_SPEED` speeds zones up; `MOCK_STATE=off` starts with automatic watering
 off. The mock follows the API's shapes, not every rule the firmware enforces.
