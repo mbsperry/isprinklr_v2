@@ -3,7 +3,7 @@
 Node service. Serves the frontend, collects logs, backs up schedules.
 
 The UDP log sink and log history exist as of Phase 5; static hosting and the
-nightly settings backup as of Phase 6. It runs as a systemd service on a Proxmox
+nightly settings backup as of Phase 6. It runs as a systemd service on a small Linux
 container; [`../docs/server-deploy.md`](../docs/server-deploy.md) has the
 install, update and restore steps.
 
@@ -59,10 +59,11 @@ Configuration comes from the environment, all optional:
 | `ISPRINKLR_HTTP_PORT` | 8080 | The web UI and `/api/logs`, `/api/health`, `/api/backups` |
 | `ISPRINKLR_WEB_DIR` | `web/dist` | Frontend build; a placeholder page is served until it exists |
 | `ISPRINKLR_BACKUP_DIR` | `server/backups` | Settings backups; git-ignored |
-| `ISPRINKLR_ESP_URL` | `http://192.168.88.54` | The device; empty turns backups off |
+| `ISPRINKLR_ESP_URL` | unset | The device, e.g. `http://192.0.2.10`; backups are off without it |
 
-On the container, `isprinklr.service` sets the data paths to
-`~/isprinklr-data` instead.
+Under systemd, `isprinklr.service` sets the data paths to `~/isprinklr-data`
+and reads site settings from `~/isprinklr-data/server.env`; see
+`server.env.example`.
 
 Then point the device at it, giving the server's IPv4 address. A PUT to
 `/api/config` requires the start time and timezone too, so send the current

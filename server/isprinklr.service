@@ -1,8 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Matt Sperry
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# systemd unit for the server on the Proxmox container
-# (docs/server-deploy.md). Logs go to journald: journalctl -u isprinklr
+# systemd unit template for the server (docs/server-deploy.md). @USER@ and
+# @HOME@ are filled in at install time; site settings such as the device's
+# address go in @HOME@/isprinklr-data/server.env, which is not in the repo
+# (server.env.example shows the keys). Logs go to journald:
+# journalctl -u isprinklr
 #
 # Data lives outside the checkout, under ~/isprinklr-data, so a fresh clone
 # or a `git clean` cannot touch log history or backups.
@@ -15,17 +18,14 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=isprinklr-v2
-Group=isprinklr-v2
-WorkingDirectory=/home/isprinklr-v2/isprinklr_v2/server
-Environment=ISPRINKLR_DB=/home/isprinklr-v2/isprinklr-data/logs.sqlite
-Environment=ISPRINKLR_BACKUP_DIR=/home/isprinklr-v2/isprinklr-data/backups
-Environment=ISPRINKLR_WEB_DIR=/home/isprinklr-v2/isprinklr_v2/web/dist
-Environment=ISPRINKLR_ESP_URL=http://192.168.88.54
-Environment=ISPRINKLR_HTTP_PORT=8080
-Environment=ISPRINKLR_UDP_PORT=5514
+User=@USER@
+WorkingDirectory=@HOME@/isprinklr_v2/server
+Environment=ISPRINKLR_DB=@HOME@/isprinklr-data/logs.sqlite
+Environment=ISPRINKLR_BACKUP_DIR=@HOME@/isprinklr-data/backups
+Environment=ISPRINKLR_WEB_DIR=@HOME@/isprinklr_v2/web/dist
+EnvironmentFile=@HOME@/isprinklr-data/server.env
 # node:sqlite prints an ExperimentalWarning on every start; it is not news.
-ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/main.js
+ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning src/main.js
 Restart=on-failure
 RestartSec=5
 # main.js flushes pending log lines on SIGTERM.

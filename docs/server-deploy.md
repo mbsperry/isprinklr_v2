@@ -1,9 +1,14 @@
 # Server deployment
 
-The Node server runs on a Proxmox container: `isprinklr-v2.lan`, 192.168.88.43,
-Ubuntu 24.04, user `isprinklr-v2` (no passwordless sudo). It has Node 24 (at
-`/usr/bin/node`), git, gh (signed in as mbsperry) and curl, and its clock is set to
-America/Los_Angeles, which is the time the nightly jobs run in.
+The Node server runs on a small Linux container (Ubuntu 24.04) under its own
+user account, as a systemd service. It needs Node 22.13 or later on the
+`PATH`, git, gh or another way to clone the repo, and curl. The nightly jobs
+run in the container's local time, so its time zone should match the
+device's.
+
+Below, `<device-ip>` is the sprinkler controller's address and `<server-ip>`
+is the container's. Site settings like these live in an env file on the
+container, not in the repo.
 
 Nothing on the container is load-bearing. If it is down, the ESP keeps
 watering; only the web UI, log history and new backups stop.
@@ -13,16 +18,18 @@ failure, starts at boot, and logs to journald.
 
 | | |
 |---|---|
-| Web UI | `http://isprinklr-v2.lan:8080/`, from `web/dist` |
+| Web UI | `http://<server-ip>:8080/`, from `web/dist` |
 | Log sink | UDP 5514, into `~/isprinklr-data/logs.sqlite`, pruned to 12 months at 03:30 |
-| Settings backup | from 192.168.88.54 at startup and at 03:45 nightly, into `~/isprinklr-data/backups/` |
+| Settings backup | from the device at startup and at 03:45 nightly, into `~/isprinklr-data/backups/` |
 
 Data sits in `~/isprinklr-data`, outside the checkout, so re-cloning cannot
-lose it. Settings are in [`server/isprinklr.service`](../server/isprinklr.service).
+lose it. The unit is [`server/isprinklr.service`](../server/isprinklr.service),
+a template filled in with the service user's name and home directory at
+install time.
 
 ## First install
 
-Run these on the container, from `ssh isprinklr-v2`.
+Run these on the container, as the user the service will run as.
 
 ```bash
 gh repo clone mbsperry/isprinklr_v2 ~/isprinklr_v2
@@ -36,10 +43,22 @@ cd ~/isprinklr_v2/server
 npm test
 ```
 
-Then install and start the service. This needs sudo:
+Create the settings file, then edit `ISPRINKLR_ESP_URL` in it to the
+device's address:
 
 ```bash
-sudo cp ~/isprinklr_v2/server/isprinklr.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now isprinklr
+mkdir -p ~/isprinklr-data && cp ~/isprinklr_v2/server/server.env.example ~/isprinklr-data/server.env
+```
+
+```bash
+nano ~/isprinklr-data/server.env
+```
+
+Then install and start the service. This needs sudo, and fills in the
+template with the current user and home directory:
+
+```bash
+sed -e "s|@USER@|$USER|g" -e "s|@HOME@|$HOME|g" ~/isprinklr_v2/server/isprinklr.service | sudo tee /etc/systemd/system/isprinklr.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable --now isprinklr
 ```
 
 Check it. The health response should show a `backup.last_timestamp`, and the
@@ -56,19 +75,20 @@ ls ~/isprinklr-data/backups
 ## Point the ESP's logs at it
 
 This changes a device setting. A PUT to `/api/config` needs the start time and
-timezone too, so check the current ones first and send them back unchanged:
+timezone too, so check the current ones first and send them back unchanged,
+with `log_host` set to the container's address:
 
 ```bash
-curl -s http://192.168.88.54/api/config
+curl -s http://<device-ip>/api/config
 ```
 
 ```bash
-curl -X PUT -H 'Content-Type: application/json' -d '{"start_hour":7,"start_minute":0,"timezone":"PST8PDT,M3.2.0,M11.1.0","log_host":"192.168.88.43","log_port":5514}' http://192.168.88.54/api/config
+curl -X PUT -H 'Content-Type: application/json' -d '{"start_hour":7,"start_minute":0,"timezone":"PST8PDT,M3.2.0,M11.1.0","log_host":"<server-ip>","log_port":5514}' http://<device-ip>/api/config
 ```
 
 Within a few seconds `/api/health` on the server should show `sink.received`
-climbing, and `/api/status` on the device should show
-`"sink": "192.168.88.43:5514"`.
+climbing, and `/api/status` on the device should show the server under
+`logs.sink`.
 
 ## Updating
 
@@ -76,9 +96,8 @@ climbing, and `/api/status` on the device should show
 cd ~/isprinklr_v2 && git pull && sudo systemctl restart isprinklr
 ```
 
-Each restart also takes a backup, which is harmless. If the unit file itself
-changed, copy it again and run `sudo systemctl daemon-reload` before the
-restart.
+Each restart also takes a backup, which is harmless. If `isprinklr.service`
+changed, run the install command above again instead of the restart.
 
 ## When the frontend exists
 
@@ -97,8 +116,9 @@ cd ~/isprinklr_v2/server && npm run -s restore-commands -- ~/isprinklr-data/back
 ```
 
 That only prints five `curl -X PUT` lines; nothing is sent. Read them, then
-run them in order. A second argument such as `http://192.168.88.60` sends them
-to a replacement board at another address.
+run them in order. They go to the address the backup was taken from; a second
+argument such as `http://<new-device-ip>` sends them to a replacement board
+instead.
 
 The order is for a blank board. On one that already has settings, a PUT can be
 refused, for example zones that would remove a zone an existing schedule uses.
@@ -115,8 +135,8 @@ logs to the server.
 sudo journalctl -u isprinklr -n 100
 ```
 
-The `isprinklr-v2` user is not in the `adm` or `systemd-journal` group, so
-`journalctl` needs sudo.
+`journalctl` needs sudo unless the user is in the `adm` or `systemd-journal`
+group.
 
 ```bash
 systemctl status isprinklr

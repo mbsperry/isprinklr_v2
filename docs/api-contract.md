@@ -342,7 +342,7 @@ GET /api/backups
 GET /api/backups/2026-11-16T11-45-00Z
 {"ok": true, "timestamp": "2026-11-16T11-45-00Z",
  "backup": {"format": "isprinklr-settings-backup", "format_version": 1,
-   "taken_at": "...", "device": "http://192.168.88.54",
+   "taken_at": "...", "device": "http://192.0.2.10",
    "firmware_version": "0.6.0-phase5", "settings_hash": "78a2614c",
    "restore": [{"path": "/api/zones", "body": {"zones": [...]}},
                {"path": "/api/schedules", "body": {"schedules": [...]}},

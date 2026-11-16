@@ -166,11 +166,11 @@ test('restore commands PUT each body in order, shell-quoted', async () => {
   const { restoreCommands } = await import('../src/restore_commands.js');
   const doc = await fetchSettings('http://esp.test', device());
   doc.restore[0].body.zones[0].name = "Bob's Beds";
-  const cmds = restoreCommands(doc, 'http://192.168.88.54/');
+  const cmds = restoreCommands(doc, 'http://192.0.2.10/');
   assert.equal(cmds.length, 5);
   assert.match(cmds[0], /'\{"zones":\[\{"zone":1,"name":"Bob'\\''s Beds"\}/);
-  assert.ok(cmds[0].endsWith(' http://192.168.88.54/api/zones'));
-  assert.ok(cmds[4].endsWith(' http://192.168.88.54/api/schedule/enabled'));
+  assert.ok(cmds[0].endsWith(' http://192.0.2.10/api/zones'));
+  assert.ok(cmds[4].endsWith(' http://192.0.2.10/api/schedule/enabled'));
   assert.ok(restoreCommands(doc)[0].endsWith(' http://esp.test/api/zones'));
   assert.throws(() => restoreCommands({}), /not an iSprinklr/);
 });
