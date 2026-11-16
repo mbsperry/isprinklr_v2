@@ -6,8 +6,8 @@ user account, as a systemd service. It needs Node 22.13 or later on the
 run in the container's local time, so its time zone should match the
 device's.
 
-Below, `<device-ip>` is the sprinkler controller's address and `<server-ip>`
-is the container's. Site settings like these live in an env file on the
+Below, `$ISPRINKLR_DEVICE` is the sprinkler controller's address, set in the
+shell, and `<server-ip>` is the container's, to fill in by hand. Site settings like these live in an env file on the
 container, not in the repo.
 
 Nothing on the container is load-bearing. If it is down, the ESP keeps
@@ -79,11 +79,11 @@ timezone too, so check the current ones first and send them back unchanged,
 with `log_host` set to the container's address:
 
 ```bash
-curl -s http://<device-ip>/api/config
+curl -s http://$ISPRINKLR_DEVICE/api/config
 ```
 
 ```bash
-curl -X PUT -H 'Content-Type: application/json' -d '{"start_hour":7,"start_minute":0,"timezone":"PST8PDT,M3.2.0,M11.1.0","log_host":"<server-ip>","log_port":5514}' http://<device-ip>/api/config
+curl -X PUT -H 'Content-Type: application/json' -d '{"start_hour":7,"start_minute":0,"timezone":"PST8PDT,M3.2.0,M11.1.0","log_host":"<server-ip>","log_port":5514}' http://$ISPRINKLR_DEVICE/api/config
 ```
 
 Within a few seconds `/api/health` on the server should show `sink.received`

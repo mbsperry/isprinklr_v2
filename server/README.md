@@ -65,12 +65,13 @@ Under systemd, `isprinklr.service` sets the data paths to `~/isprinklr-data`
 and reads site settings from `~/isprinklr-data/server.env`; see
 `server.env.example`.
 
-Then point the device at it, giving the server's IPv4 address. A PUT to
+Then point the device at it, replacing `<server-ip>` with the server's IPv4
+address; `$ISPRINKLR_DEVICE` is the device's address. A PUT to
 `/api/config` requires the start time and timezone too, so send the current
 values along with it:
 
 ```bash
-curl -X PUT -H 'Content-Type: application/json' -d '{"start_hour":7,"start_minute":0,"timezone":"PST8PDT,M3.2.0,M11.1.0","log_host":"192.168.88.21","log_port":5514}' http://192.168.88.54/api/config
+curl -X PUT -H 'Content-Type: application/json' -d '{"start_hour":7,"start_minute":0,"timezone":"PST8PDT,M3.2.0,M11.1.0","log_host":"<server-ip>","log_port":5514}' http://$ISPRINKLR_DEVICE/api/config
 ```
 
 Sending `"log_host": ""` turns export off. Query shapes are in
