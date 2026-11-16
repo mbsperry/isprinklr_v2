@@ -207,6 +207,11 @@ device has a static reservation on the router.
 How every firmware change ships from now on. From the repo root, on a machine on
 the LAN or the router VPN:
 
+The machine needs `firmware/secrets.ini` with the router's address in
+`ntp_server` (see [Build settings](../firmware/README.md#build-settings)). If
+the build prints the `secrets.ini sets no ntp_server` warning, stop: that image
+would lose LAN time.
+
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 cd firmware

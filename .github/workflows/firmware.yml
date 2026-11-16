@@ -56,11 +56,6 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade "platformio>=6.1.16"
       - name: Build ${{ matrix.env }}
-        env:
-          # Dummy values so the wifi env compiles in CI; real ones come from the
-          # developer's shell.
-          ISPRINKLR_WIFI_SSID: ci-ssid
-          ISPRINKLR_WIFI_PASSWORD: ci-password
         run: pio run -e ${{ matrix.env }}
       - name: Show partition table and resolved packages
         if: always()

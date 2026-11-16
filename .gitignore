@@ -33,3 +33,6 @@ server/backups/
 # OS
 .DS_Store
 Thumbs.db
+
+# Firmware site settings (router address, Wi-Fi credentials)
+firmware/secrets.ini

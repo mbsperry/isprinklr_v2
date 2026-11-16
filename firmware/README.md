@@ -23,12 +23,29 @@ scheduled and manual. A daily trigger starts the active schedule. A checkpoint
 in NVS lets a run recover after a reboot (resume within 60 minutes, else skip).
 Cancel and skip work mid-run. Running on the device since 2026-11-15.
 
+### Build settings
+
+Site details stay out of this public repo. The router's address and the Wi-Fi
+credentials live in `firmware/secrets.ini`, which is gitignored and which
+`platformio.ini` reads through `extra_configs`. Each machine that builds
+firmware needs its own copy. Start from the example and fill in `ntp_server`
+(and the Wi-Fi keys, only for the `wifi` environment):
+
+```bash
+cp secrets.example.ini secrets.ini
+```
+
+A build without the file still succeeds, with empty values, so CI needs
+nothing. A build with no `ntp_server` prints a loud warning; do not OTA that
+image to the installed device. The values are compiled in, so after changing
+one, rebuild and OTA.
+
 ### Router NTP
 
 The firmware asks the LAN router first, then `pool.ntp.org`, then
-`time.google.com`. The router's address is a build setting, kept out of git:
-export `ISPRINKLR_NTP_SERVER` before `pio run`, as with the Wi-Fi
-credentials. Without it the build warns and uses only public servers
+`time.google.com`. The router's address is a build setting, kept out of git
+in `firmware/secrets.ini` (see [Build settings](#build-settings)). Without it
+the build warns and uses only public servers
 (`pool.ntp.org`, `time.google.com`, `time.cloudflare.com`), so a reboot during
 a WAN outage would leave the device with no valid time. The router's NTP server was enabled on
 2026-11-15, so the ESP gets the time after a reboot even during a WAN outage,
@@ -41,7 +58,7 @@ the next reboot. For reference, the RouterOS 7 setup was:
 /system ntp server set enabled=yes
 ```
 
-Check it from the Mac with `sntp -d $ISPRINKLR_NTP_SERVER` (look for a stratum), and
+Check it from the Mac with `sntp -d <router-ip>` (look for a stratum), and
 in `/api/status` the router shows `"reachable": true`.
 
 ## Layout rule
