@@ -112,8 +112,11 @@ logs to the server.
 ## Logs and troubleshooting
 
 ```bash
-journalctl -u isprinklr -n 100
+sudo journalctl -u isprinklr -n 100
 ```
+
+The `isprinklr-v2` user is not in the `adm` or `systemd-journal` group, so
+`journalctl` needs sudo.
 
 ```bash
 systemctl status isprinklr
