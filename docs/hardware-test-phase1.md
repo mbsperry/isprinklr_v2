@@ -30,9 +30,9 @@ export PATH="$HOME/.local/bin:$PATH"
 cd firmware
 pio test -e native
 pio run -e ethernet
-curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update
+curl -F "firmware=@.pio/build/ethernet/firmware.bin" http://$ISPRINKLR_DEVICE/api/update
 sleep 20
-curl -s http://192.168.88.54/api/status | jq '.firmware_version, .phase, .boot.healthy, .hunter_bus, .zones'
+curl -s http://$ISPRINKLR_DEVICE/api/status | jq '.firmware_version, .phase, .boot.healthy, .hunter_bus, .zones'
 ```
 
 Expect `0.2.0-phase1`, phase `"1"`, `healthy: true`, `hunter_bus.ready: true`,
@@ -44,9 +44,9 @@ anything.
 ## 2. Start zone 1 for 2 minutes
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":2}' http://192.168.88.54/api/zone/start | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":2}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
 sleep 2
-curl -s http://192.168.88.54/api/status | jq '.hunter_bus, .zones'
+curl -s http://$ISPRINKLR_DEVICE/api/status | jq '.hunter_bus, .zones'
 ```
 
 Expect HTTP 202 with `"ok": true`. Within a second or so the Pro-C should show
@@ -57,7 +57,7 @@ normal).
 ## 3. Stop it
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{}' http://192.168.88.54/api/zone/stop | jq
+curl -s -H 'Content-Type: application/json' -d '{}' http://$ISPRINKLR_DEVICE/api/zone/stop | jq
 ```
 
 Expect 202 naming zone 1, and the Pro-C back to idle.
@@ -69,11 +69,11 @@ highest zone the Pro-C actually has, if that is 13 or more. If it has 12 or
 fewer, this path stays untested.
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":13,"duration_minutes":2}' http://192.168.88.54/api/zone/start | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":13,"duration_minutes":2}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
 ```
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{}' http://192.168.88.54/api/zone/stop | jq
+curl -s -H 'Content-Type: application/json' -d '{}' http://$ISPRINKLR_DEVICE/api/zone/stop | jq
 ```
 
 ## 5. Let a run end on its own
@@ -81,9 +81,9 @@ curl -s -H 'Content-Type: application/json' -d '{}' http://192.168.88.54/api/zon
 The safety property everything depends on: the Pro-C ends a run by itself.
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":1}' http://192.168.88.54/api/zone/start | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":1}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
 sleep 75
-curl -s http://192.168.88.54/api/status | jq '.zones'
+curl -s http://$ISPRINKLR_DEVICE/api/status | jq '.zones'
 ```
 
 The Pro-C should go idle after a minute with no stop sent, and `commanded_zone`
@@ -95,25 +95,25 @@ Unverified behaviour that Phase 4's sequencing depends on: does a start for zone
 B replace a running zone A, or queue behind it, or run both?
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":3}' http://192.168.88.54/api/zone/start | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":3}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
 sleep 10
-curl -s -H 'Content-Type: application/json' -d '{"zone":2,"duration_minutes":3}' http://192.168.88.54/api/zone/start | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":2,"duration_minutes":3}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
 ```
 
 Note what the Pro-C shows, then stop both:
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1}' http://192.168.88.54/api/zone/stop | jq
-curl -s -H 'Content-Type: application/json' -d '{"zone":2}' http://192.168.88.54/api/zone/stop | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1}' http://$ISPRINKLR_DEVICE/api/zone/stop | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":2}' http://$ISPRINKLR_DEVICE/api/zone/stop | jq
 ```
 
 ## 7. Bad requests are refused without touching the bus
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":0}' http://192.168.88.54/api/zone/start | jq
-curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_seconds":600}' http://192.168.88.54/api/zone/start | jq
-curl -s -d 'zone=1' http://192.168.88.54/api/zone/start | jq
-curl -s http://192.168.88.54/api/status | jq '.hunter_bus.frames_sent'
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":0}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_seconds":600}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
+curl -s -d 'zone=1' http://$ISPRINKLR_DEVICE/api/zone/start | jq
+curl -s http://$ISPRINKLR_DEVICE/api/status | jq '.hunter_bus.frames_sent'
 ```
 
 Expect 400, 400, 415, and `frames_sent` unchanged from before this step.
@@ -124,7 +124,7 @@ Start a zone, then immediately try an upload while the frame is still going
 out. Run this from `firmware/` after step 1's build.
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":1}' http://192.168.88.54/api/zone/start ; curl -s -F "firmware=@.pio/build/ethernet/firmware.bin" http://192.168.88.54/api/update | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":1}' http://$ISPRINKLR_DEVICE/api/zone/start ; curl -s -F "firmware=@.pio/build/ethernet/firmware.bin" http://$ISPRINKLR_DEVICE/api/update | jq
 ```
 
 Expect the upload to return 503 `"error": "busy"` with nothing flashed. Timing
@@ -132,7 +132,7 @@ dependent: if the frame finished first, the upload succeeds and the device
 reboots, which is also fine. Then stop zone 1.
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1}' http://192.168.88.54/api/zone/stop | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1}' http://$ISPRINKLR_DEVICE/api/zone/stop | jq
 ```
 
 ## 8. Optional: ESP power loss mid-run
@@ -141,7 +141,7 @@ Needs the basement. The board is PoE powered, so unplugging its Ethernet cable
 cuts power.
 
 ```bash
-curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":2}' http://192.168.88.54/api/zone/start | jq
+curl -s -H 'Content-Type: application/json' -d '{"zone":1,"duration_minutes":2}' http://$ISPRINKLR_DEVICE/api/zone/start | jq
 ```
 
 Unplug the cable while the Pro-C shows zone 1 running. The Pro-C should carry

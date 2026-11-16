@@ -2,7 +2,7 @@
 
 ESP32-S3 firmware. PlatformIO project.
 
-**Phase 0 is installed (2026-11-14)** at 192.168.88.54. Ship changes over the
+**Phase 0 is installed (2026-11-14).** Ship changes over the
 network with the [routine OTA update](../docs/phase0-runbook.md#routine-ota-update);
 CI runs the host tests and builds both device envs on every firmware change.
 
@@ -25,8 +25,12 @@ Cancel and skip work mid-run. Running on the device since 2026-11-15.
 
 ### Router NTP
 
-The firmware asks the MikroTik router (192.168.88.1) first, then
-`pool.ntp.org`, then `time.google.com`. The router's NTP server was enabled on
+The firmware asks the LAN router first, then `pool.ntp.org`, then
+`time.google.com`. The router's address is a build setting, kept out of git:
+export `ISPRINKLR_NTP_SERVER` before `pio run`, as with the Wi-Fi
+credentials. Without it the build warns and uses only public servers
+(`pool.ntp.org`, `time.google.com`, `time.cloudflare.com`), so a reboot during
+a WAN outage would leave the device with no valid time. The router's NTP server was enabled on
 2026-11-15, so the ESP gets the time after a reboot even during a WAN outage,
 because the router keeps serving its own clock. lwIP sticks with whichever
 server answered last, so after a router outage it may stay on a fallback until
@@ -37,7 +41,7 @@ the next reboot. For reference, the RouterOS 7 setup was:
 /system ntp server set enabled=yes
 ```
 
-Check it from the Mac with `sntp -d 192.168.88.1` (look for a stratum), and
+Check it from the Mac with `sntp -d $ISPRINKLR_NTP_SERVER` (look for a stratum), and
 in `/api/status` the router shows `"reachable": true`.
 
 ## Layout rule

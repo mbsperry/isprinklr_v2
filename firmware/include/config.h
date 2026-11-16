@@ -29,12 +29,22 @@ constexpr int kEthAddr = 1;
 
 constexpr uint32_t kNetworkTimeoutMs = 30000;
 
-// SNTP servers, tried in order; lwIP moves on when one stops answering. The
-// router first: once its NTP server is enabled it keeps serving its own clock
-// through a WAN outage, so a reboot during one can still get the time. Router
-// NTP server enabled 2026-11-15. The others are fallbacks.
-constexpr const char* kNtpServers[3] = {"192.168.88.1", "pool.ntp.org",
-                                        "time.google.com"};
+// SNTP servers, tried in order; lwIP moves on when one stops answering.
+//
+// A LAN NTP server (the router) goes first when the build names one:
+//   export ISPRINKLR_NTP_SERVER=<router-ip>
+// It is a build setting so the site's address stays out of git. The router
+// keeps serving its own clock through a WAN outage, so a reboot during one can
+// still get the time; without it, time stays invalid (and nothing waters)
+// until the WAN is back. The build warns when it is unset.
+#ifndef NTP_LOCAL_SERVER
+#define NTP_LOCAL_SERVER ""
+#endif
+constexpr bool kHasLocalNtp = sizeof(NTP_LOCAL_SERVER) > 1;
+constexpr const char* kNtpServers[3] = {
+    kHasLocalNtp ? NTP_LOCAL_SERVER : "pool.ntp.org",
+    kHasLocalNtp ? "pool.ntp.org" : "time.google.com",
+    kHasLocalNtp ? "time.google.com" : "time.cloudflare.com"};
 
 // Reboot recovery (open decision 1): after a reboot mid-run, carry on with
 // the remaining zones only if the ESP is back within this long of when the

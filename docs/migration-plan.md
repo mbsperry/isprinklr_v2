@@ -19,7 +19,7 @@ disaster.
 ## Phase 0 — OTA repartition
 
 **Complete (2026-11-14).** One USB trip, then OTA verified in both directions and
-the boot guard proven on hardware. Device at 192.168.88.54. See
+the boot guard proven on hardware. See
 [`phase0-runbook.md`](phase0-runbook.md) for the install record, lessons learned,
 and the routine OTA update procedure.
 
