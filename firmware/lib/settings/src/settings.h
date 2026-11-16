@@ -56,7 +56,7 @@ struct Settings {
 
 // Checks every cross-field rule. On failure returns false with a message that
 // names the offending field.
-//   zones: 1-48, unique, names 1-32 bytes
+//   zones: 1-10 (hunter::kMaxZone), unique, names 1-32 bytes
 //   schedules: at most 10, names 1-32 bytes and unique
 //   items: zone must be a configured zone, at most once per schedule,
 //          duration_minutes within hunter_limits.h

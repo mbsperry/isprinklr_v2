@@ -82,6 +82,53 @@ Built in Phase 4 as proposed (Matt, 2026-11-15):
 - **Checkpoint.** It stores the run's entries with their outcomes, not
   `{schedule, zone_index}`.
 
+## 7. Zone count and settings size — decided 2026-11-16
+
+The firmware accepts zones 1–10 (`hunter::kMaxZone`), not the SmartPort
+protocol's 1–48 (Matt, 2026-11-16). The frame builder still covers 1–48
+(`kMaxProtocolZone`), so zones 13–48 stay tested at the protocol level.
+
+**Why.** Zones, schedules and config are one JSON document in NVS, capped at
+4 KB (`settings_limits.h`). Measured by `test_settings_sizing`, with 32-byte
+names, every schedule slot full, and every zone in every schedule:
+
+| Zones | Stored document | `PUT /api/schedules` body |
+|---|---|---|
+| 10 | 3.7 KB | 6.7 KB |
+| 16 | 5.7 KB | 10.4 KB |
+| 23 | 8.0 KB | 14.7 KB |
+| 48 | 16.3 KB | 30.2 KB |
+
+The installed Pro-C has 10 zones, and at 10 the worst case fits. At 48, only one
+full schedule fits. An over-size save is refused cleanly (413, nothing written),
+so this was never a corruption risk, only saves that would fail as zones were
+added.
+
+The cap can't simply be raised. The NVS partition is 20 KB, about 16 KB usable,
+and NVS writes the new blob before erasing the old one, so the document must fit
+twice beside the checkpoint and boot counter: about 6 KB at most. Growing the
+NVS partition changes the partition table, which needs a USB reflash and wipes
+NVS. Splitting the document across NVS keys runs into the same total and loses
+all-or-nothing writes.
+
+**The fix if more zones are ever needed: move settings to LittleFS.** The
+partition table already has a 7 MB `littlefs` partition that nothing uses, so
+this ships by OTA with no repartition. Sketch:
+
+- Store the same compact document as a file. Write `settings.tmp`, then rename
+  it over `settings.json`; LittleFS renames are atomic and it is built to
+  survive power loss, so writes stay all-or-nothing.
+- On first boot, if the file is missing and the NVS blob exists, copy it across.
+  Keep the NVS copy until the file has loaded cleanly once.
+- Raise `kMaxZone`, `kMaxDocumentBytes`, and the 16 KB PUT body limit in
+  `web.cpp` (about 32 KB for 48 zones). Keep all access under the settings mutex.
+- Costs: a few KB of RAM for the mounted filesystem, about 30 KB peak for the
+  largest request and response, a migration path, and a hardware test.
+
+A binary encoding in NVS (about 3.5 KB at 48 zones × 10 schedules) was the other
+option; it was rejected because a hand-written codec is harder to inspect and the
+HTTP limit would still need raising.
+
 ---
 
 ## Settled
@@ -114,4 +161,5 @@ Recorded so they do not get relitigated.
 | Commands during a run | One queue; manual appends; cancel and skip; manual not gated (decision 6) |
 | `EO` day pattern | Strict alternation by days since 1970-01-01; not v1's day-of-year parity (2026-11-15) |
 | Settings storage | One compact NVS document, 4 KB cap, all-or-nothing writes, FNV-1a `settings_hash` |
+| Zone count | 1–10; LittleFS is the path to more (decision 7) |
 | Deploy path | `POST /api/update` over the LAN; USB only for recovery |

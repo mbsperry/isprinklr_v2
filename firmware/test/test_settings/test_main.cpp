@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "hunter_limits.h"
 #include "memory_kv_store.h"
 #include "settings_api.h"
 #include "settings_json.h"
@@ -162,31 +163,38 @@ void test_oversize_document_is_413() {
   MemoryKvStore kv;
   SettingsStore store(kv);
   store.load();
-  // 48 zones with 32-byte names, then 10 schedules each covering every zone.
+  // Plain names cannot reach the cap at 10 zones (test_settings_sizing), but
+  // names that need escaping can: each '"' is stored as two bytes.
+  const std::string quotes(30, '"');
+  const auto quoted = [&](int n) {
+    std::string name;
+    for (char c : quotes) name += "\\" + std::string(1, c);
+    return name + (n < 10 ? "0" : "") + std::to_string(n);
+  };
   std::string zones = R"({"zones":[)";
-  for (int z = 1; z <= 48; ++z) {
+  for (int z = 1; z <= hunter::kMaxZone; ++z) {
     if (z > 1) zones += ",";
-    zones += R"({"zone":)" + std::to_string(z) + R"(,"name":"abcdefghijabcdefghijabcdefghij)" +
-             (z < 10 ? "0" : "") + std::to_string(z) + R"("})";
+    zones += R"({"zone":)" + std::to_string(z) + R"(,"name":")" + quoted(z) + R"("})";
   }
   zones += "]}";
-  TEST_ASSERT_EQUAL(200, settings_api::putZones(store, body(zones.c_str())).status);
+  const auto zr = settings_api::putZones(store, body(zones.c_str()));
+  TEST_ASSERT_EQUAL_MESSAGE(200, zr.status, str(zr.body["message"]).c_str());
   std::string sch = R"({"schedules":[)";
   for (int s = 0; s < 10; ++s) {
     if (s) sch += ",";
-    sch += R"({"name":"S)" + std::to_string(s) + R"(","items":[)";
-    for (int z = 1; z <= 48; ++z) {
+    sch += R"({"name":")" + quoted(s) + R"(","items":[)";
+    for (int z = 1; z <= hunter::kMaxZone; ++z) {
       if (z > 1) sch += ",";
-      sch += R"({"zone":)" + std::to_string(z) + R"(,"days":"M:TU:W:TH:F","duration_minutes":10})";
+      sch += R"({"zone":)" + std::to_string(z) + R"(,"days":"M:TU:W:TH:F:SA:SU","duration_minutes":240})";
     }
     sch += "]}";
   }
   sch += "]}";
-  JsonDocument big;
-  TEST_ASSERT_FALSE(deserializeJson(big, sch));
-  const auto r = settings_api::putSchedules(store, big.as<JsonVariantConst>());
+  const int writes = kv.blobWrites;
+  const auto r = settings_api::putSchedules(store, body(sch.c_str()));
   TEST_ASSERT_EQUAL(413, r.status);
   TEST_ASSERT_EQUAL_UINT(0, store.current().schedules.size());
+  TEST_ASSERT_EQUAL(writes, kv.blobWrites);
 }
 
 void test_active_must_exist_and_cannot_be_orphaned() {
@@ -468,7 +476,8 @@ void test_document_with_log_level() {
 
 // Sizing for the settings cap (settings_limits.h). Builds documents directly,
 // skipping the API, and prints the stored size and the size of the PUT
-// /api/schedules body the frontend would send for the same data.
+// /api/schedules body the frontend would send for the same data. Names are
+// plain ASCII; every item runs every day for 240 minutes.
 namespace {
 
 settings::Settings sized(int zones, int schedules, int itemsPerSchedule,
@@ -517,21 +526,14 @@ void report(const char* label, const settings::Settings& s) {
 }  // namespace
 
 void test_settings_sizing() {
-  report("10 zones, 10 sched x 10, names 32", sized(10, 10, 10, 32));
-  report("16 zones, 10 sched x 16, names 32", sized(16, 10, 16, 32));
-  report("23 zones, 10 sched x 23, names 32", sized(23, 10, 23, 32));
-  report("48 zones, 1 sched x 48, names 32", sized(48, 1, 48, 32));
-  report("48 zones, 2 sched x 48, names 32", sized(48, 2, 48, 32));
-  report("48 zones, 10 sched x 48, names 32", sized(48, 10, 48, 32));
-  int fit = 0;
-  while (fit < 10 && settings::serializeDocument(sized(48, fit + 1, 48, 32))
-                             .size() <= settings::kMaxDocumentBytes) {
-    ++fit;
-  }
-  printf("full 48-zone schedules that fit with 48 named zones: %d\n", fit);
-  // A 10-zone Pro-C with every schedule slot used still fits.
-  TEST_ASSERT_TRUE(settings::serializeDocument(sized(10, 10, 10, 32)).size() <=
-                   settings::kMaxDocumentBytes);
+  report("v1 shape: 8 zones, 5 sched x 8", sized(8, 5, 8, 20));
+  report("worst case: 10 zones, 10 sched x 10",
+         sized(hunter::kMaxZone, settings::kMaxSchedules, hunter::kMaxZone, 32));
+  // The worst case with plain names must fit; this is what kMaxZone rests on.
+  TEST_ASSERT_TRUE(settings::serializeDocument(
+                       sized(hunter::kMaxZone, settings::kMaxSchedules,
+                             hunter::kMaxZone, settings::kMaxNameLength))
+                       .size() <= settings::kMaxDocumentBytes);
 }
 
 int main() {

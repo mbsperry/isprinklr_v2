@@ -55,8 +55,10 @@ Notes:
 ### Zone control (implemented)
 
 Both endpoints take `Content-Type: application/json`; anything else gets 415.
-Bounds come from `firmware/lib/hunter/src/hunter_limits.h`: zones 1–48,
-`duration_minutes` 1–240. Values must be JSON integers; strings, floats
+Bounds come from `firmware/lib/hunter/src/hunter_limits.h`: zones 1–10,
+`duration_minutes` 1–240. The protocol goes to 48, but the firmware accepts
+10, the installed Pro-C's count, so the settings document fits its 4 KB cap
+(decision 7 in `open-decisions.md`). Values must be JSON integers; strings, floats
 (including `10.0`), booleans and null are rejected, never coerced.
 
 Since Phase 4 both go through the sequencer, which owns all zone commands.
@@ -209,7 +211,8 @@ GETs return the same shapes, plus `"ok": true` and `settings_hash`.
 
 Rules, from `firmware/lib/settings/src/settings.cpp`:
 
-- **Zones:** numbers 1–48, unique; names 1–32 bytes.
+- **Zones:** numbers 1–10, unique; names 1–32 bytes. See decision 7 in
+  `open-decisions.md` for why not 48.
 - **Schedules:** at most 10; names 1–32 bytes, unique.
 - **Items:** each zone must be a configured zone, at most once per schedule, with
   `duration_minutes` 1–240. Item order is run order.
@@ -225,8 +228,14 @@ Rules, from `firmware/lib/settings/src/settings.cpp`:
   port 5514, level `debug`) they do not affect `settings_hash`, so a device
   that never set them hashes as before. Setting a non-default level changes
   the hash.
-- **Size:** the stored document is capped at 4 KB (413 `too_large`). It is
-  stored compactly, so the real data (5 schedules × 8 zones) takes under 1 KB.
+- **Size:** the stored document is capped at 4 KB (413 `too_large`; nothing is
+  written). It is stored compactly: the real data (5 schedules × 8 zones) takes
+  853 bytes, and the worst case allowed by the rules above (10 zones, 10
+  schedules each running every zone, 32-byte names) about 3.7 KB. Only names
+  full of characters JSON must escape (`"`, `\`, control characters) can push
+  a valid document past the cap. Separately, a PUT body over 16 KB is refused by
+  the web server with a bare 413 before it is parsed; at 10 zones the largest
+  valid `PUT /api/schedules` body is about 6.7 KB.
 
 Errors: 400 `invalid_body` (wrong shape or type) or `invalid_settings` (a rule
 above, with a message naming it), 413 `too_large`, 500 `storage_failed`.

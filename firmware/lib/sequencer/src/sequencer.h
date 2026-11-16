@@ -90,7 +90,8 @@ struct Timing {
 };
 
 // Cap on entries in one run, completed ones included. A full schedule is at
-// most 48 entries (one per zone); the rest leaves room for manual additions.
+// most hunter::kMaxZone entries (one per zone); the rest leaves room for manual
+// additions.
 constexpr std::size_t kMaxRunEntries = 64;
 
 class Sequencer {
