@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "hunter_limits.h"
 #include "memory_kv_store.h"
 #include "settings_api.h"
 #include "settings_json.h"
@@ -162,31 +163,38 @@ void test_oversize_document_is_413() {
   MemoryKvStore kv;
   SettingsStore store(kv);
   store.load();
-  // 48 zones with 32-byte names, then 10 schedules each covering every zone.
+  // Plain names cannot reach the cap at 10 zones (test_settings_sizing), but
+  // names that need escaping can: each '"' is stored as two bytes.
+  const std::string quotes(30, '"');
+  const auto quoted = [&](int n) {
+    std::string name;
+    for (char c : quotes) name += "\\" + std::string(1, c);
+    return name + (n < 10 ? "0" : "") + std::to_string(n);
+  };
   std::string zones = R"({"zones":[)";
-  for (int z = 1; z <= 48; ++z) {
+  for (int z = 1; z <= hunter::kMaxZone; ++z) {
     if (z > 1) zones += ",";
-    zones += R"({"zone":)" + std::to_string(z) + R"(,"name":"abcdefghijabcdefghijabcdefghij)" +
-             (z < 10 ? "0" : "") + std::to_string(z) + R"("})";
+    zones += R"({"zone":)" + std::to_string(z) + R"(,"name":")" + quoted(z) + R"("})";
   }
   zones += "]}";
-  TEST_ASSERT_EQUAL(200, settings_api::putZones(store, body(zones.c_str())).status);
+  const auto zr = settings_api::putZones(store, body(zones.c_str()));
+  TEST_ASSERT_EQUAL_MESSAGE(200, zr.status, str(zr.body["message"]).c_str());
   std::string sch = R"({"schedules":[)";
   for (int s = 0; s < 10; ++s) {
     if (s) sch += ",";
-    sch += R"({"name":"S)" + std::to_string(s) + R"(","items":[)";
-    for (int z = 1; z <= 48; ++z) {
+    sch += R"({"name":")" + quoted(s) + R"(","items":[)";
+    for (int z = 1; z <= hunter::kMaxZone; ++z) {
       if (z > 1) sch += ",";
-      sch += R"({"zone":)" + std::to_string(z) + R"(,"days":"M:TU:W:TH:F","duration_minutes":10})";
+      sch += R"({"zone":)" + std::to_string(z) + R"(,"days":"M:TU:W:TH:F:SA:SU","duration_minutes":240})";
     }
     sch += "]}";
   }
   sch += "]}";
-  JsonDocument big;
-  TEST_ASSERT_FALSE(deserializeJson(big, sch));
-  const auto r = settings_api::putSchedules(store, big.as<JsonVariantConst>());
+  const int writes = kv.blobWrites;
+  const auto r = settings_api::putSchedules(store, body(sch.c_str()));
   TEST_ASSERT_EQUAL(413, r.status);
   TEST_ASSERT_EQUAL_UINT(0, store.current().schedules.size());
+  TEST_ASSERT_EQUAL(writes, kv.blobWrites);
 }
 
 void test_active_must_exist_and_cannot_be_orphaned() {
@@ -466,6 +474,68 @@ void test_document_with_log_level() {
   TEST_ASSERT_FALSE(settings::parseDocument(badLevel, &back, &error));
 }
 
+// Sizing for the settings cap (settings_limits.h). Builds documents directly,
+// skipping the API, and prints the stored size and the size of the PUT
+// /api/schedules body the frontend would send for the same data. Names are
+// plain ASCII; every item runs every day for 240 minutes.
+namespace {
+
+settings::Settings sized(int zones, int schedules, int itemsPerSchedule,
+                         std::size_t nameBytes) {
+  settings::Settings s;
+  for (int z = 1; z <= zones; ++z) {
+    std::string name(nameBytes, 'x');
+    const std::string n = std::to_string(z);
+    name.replace(name.size() - n.size(), n.size(), n);
+    s.zones.push_back(settings::Zone{z, name});
+  }
+  settings::DayPattern everyDay;  // longest pattern text: M:TU:W:TH:F:SA:SU
+  everyDay.kind = settings::DayPattern::Kind::kWeekdays;
+  everyDay.weekdays = 0x7f;
+  for (int i = 0; i < schedules; ++i) {
+    settings::Schedule sch;
+    sch.name = std::string(nameBytes, 's');
+    sch.name.replace(nameBytes - 2, 2, i < 10 ? "0" + std::to_string(i)
+                                              : std::to_string(i));
+    for (int z = 1; z <= itemsPerSchedule; ++z) {
+      sch.items.push_back(settings::ScheduleItem{z, everyDay, 240});
+    }
+    s.schedules.push_back(std::move(sch));
+  }
+  s.activeSchedule = s.schedules.empty() ? "" : s.schedules[0].name;
+  s.config.logHost = "192.168.100.200";
+  s.config.logLevel = logging::Level::kInfo;
+  return s;
+}
+
+std::size_t apiBodyBytes(const settings::Settings& s) {
+  JsonDocument doc;
+  settings::writeSchedules(s.schedules, doc["schedules"].to<JsonArray>());
+  std::string out;
+  serializeJson(doc, out);
+  return out.size();
+}
+
+void report(const char* label, const settings::Settings& s) {
+  std::string error;
+  TEST_ASSERT_TRUE_MESSAGE(settings::validate(s, &error), error.c_str());
+  printf("%-34s stored %5zu bytes, PUT /api/schedules body %6zu bytes\n",
+         label, settings::serializeDocument(s).size(), apiBodyBytes(s));
+}
+
+}  // namespace
+
+void test_settings_sizing() {
+  report("v1 shape: 8 zones, 5 sched x 8", sized(8, 5, 8, 20));
+  report("worst case: 10 zones, 10 sched x 10",
+         sized(hunter::kMaxZone, settings::kMaxSchedules, hunter::kMaxZone, 32));
+  // The worst case with plain names must fit; this is what kMaxZone rests on.
+  TEST_ASSERT_TRUE(settings::serializeDocument(
+                       sized(hunter::kMaxZone, settings::kMaxSchedules,
+                             hunter::kMaxZone, settings::kMaxNameLength))
+                       .size() <= settings::kMaxDocumentBytes);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_log_sink_config);
@@ -482,6 +552,7 @@ int main() {
   RUN_TEST(test_item_validation);
   RUN_TEST(test_too_many_schedules);
   RUN_TEST(test_oversize_document_is_413);
+  RUN_TEST(test_settings_sizing);
   RUN_TEST(test_active_must_exist_and_cannot_be_orphaned);
   RUN_TEST(test_zone_removal_blocked_while_scheduled);
   RUN_TEST(test_zone_validation);

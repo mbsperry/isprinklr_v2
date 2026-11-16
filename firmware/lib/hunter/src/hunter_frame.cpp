@@ -69,12 +69,12 @@ Frame encodeZoneFrame(int zone, int minutes) {
 }  // namespace
 
 std::optional<Frame> buildStartFrame(int zone, int minutes) {
-  if (!isValidZone(zone) || !isValidRunMinutes(minutes)) return std::nullopt;
+  if (!isValidProtocolZone(zone) || !isValidRunMinutes(minutes)) return std::nullopt;
   return encodeZoneFrame(zone, minutes);
 }
 
 std::optional<Frame> buildStopFrame(int zone) {
-  if (!isValidZone(zone)) return std::nullopt;
+  if (!isValidProtocolZone(zone)) return std::nullopt;
   return encodeZoneFrame(zone, 0);
 }
 

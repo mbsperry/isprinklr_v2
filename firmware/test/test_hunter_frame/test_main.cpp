@@ -89,7 +89,7 @@ void test_start_rejects_zero_minutes() {
 
 void test_start_rejects_out_of_range() {
   TEST_ASSERT_FALSE(hunter::buildStartFrame(hunter::kMinZone - 1, 5).has_value());
-  TEST_ASSERT_FALSE(hunter::buildStartFrame(hunter::kMaxZone + 1, 5).has_value());
+  TEST_ASSERT_FALSE(hunter::buildStartFrame(hunter::kMaxProtocolZone + 1, 5).has_value());
   TEST_ASSERT_FALSE(hunter::buildStartFrame(1, hunter::kMaxRunMinutes + 1).has_value());
   TEST_ASSERT_FALSE(hunter::buildStartFrame(1, -1).has_value());
   // 256 would wrap to 0 in an 8-bit field, turning a start into a stop.
@@ -102,7 +102,7 @@ void test_stop_rejects_out_of_range() {
 }
 
 void test_every_valid_start_differs_from_its_stop() {
-  for (int zone = hunter::kMinZone; zone <= hunter::kMaxZone; ++zone) {
+  for (int zone = hunter::kMinZone; zone <= hunter::kMaxProtocolZone; ++zone) {
     const auto stop = hunter::buildStopFrame(zone);
     TEST_ASSERT_TRUE(stop.has_value());
     for (int m = hunter::kMinRunMinutes; m <= hunter::kMaxRunMinutes; ++m) {

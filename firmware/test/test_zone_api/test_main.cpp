@@ -99,7 +99,7 @@ void test_start_out_of_range_messages_name_bounds() {
   seq::Sequencer s(p);
   auto r = zone_api::start(s, parse(R"({"zone":49,"duration_minutes":10})"));
   TEST_ASSERT_EQUAL(400, r.status);
-  TEST_ASSERT_EQUAL_STRING("zone must be an integer 1-48", str(r.body["message"]).c_str());
+  TEST_ASSERT_EQUAL_STRING("zone must be an integer 1-10", str(r.body["message"]).c_str());
   r = zone_api::start(s, parse(R"({"zone":1,"duration_minutes":0})"));
   TEST_ASSERT_EQUAL_STRING("duration_minutes must be an integer 1-240",
                            str(r.body["message"]).c_str());
