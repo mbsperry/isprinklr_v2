@@ -61,10 +61,11 @@ Arduino framework does not allow.
 Built alongside the migration, not after. The seams it needs are the seams the
 migration needs anyway.
 
-**Implemented, host-tested, not yet run on hardware.** See
-[`hardware-test-phase1.md`](hardware-test-phase1.md) for the first test against
-the Pro-C. Beyond the list below, Phase 1 also added the zone start/stop
-endpoints (needed to exercise the driver at all) and moved the bus write onto
+**Complete (2026-11-15).** Host-tested, and the hardware test against the
+Pro-C passed: start, stop, self-ending runs, and a power cut mid-run. Zones
+above 12 were not exercised on hardware. See
+[`hardware-test-phase1.md`](hardware-test-phase1.md). Beyond the list below,
+Phase 1 also added the zone start/stop endpoints (needed to exercise the driver at all) and moved the bus write onto
 its own FreeRTOS task, which the plan had deferred to Phase 4.
 
 - `[env:native]` with Unity. `lib_compat_mode = off` to override a `strict`
@@ -90,8 +91,8 @@ on-device tests reboot and commandeer the board.
 from the router (NTP server enabled 2026-11-15), about 6 s after boot, with
 `pool.ntp.org` and `time.google.com` as fallbacks. Validity policy: valid after the first
 sync since boot, and stays valid until reboot even if later syncs fail, so a WAN
-outage does not stop watering. Nothing consumes `time_valid` yet; Phase 4 must
-gate on it.
+outage does not stop watering. Since Phase 4 the daily trigger gates on
+`time_valid`; manual starts do not.
 
 - SNTP via `configTime()`, timezone string for DST.
 - `time_valid` state that blocks execution and appears in the status response.
@@ -168,6 +169,13 @@ Done 2026-11-15 as `0.6.0-phase5`; hardware test in
 
 ## Phase 6 — Server and frontend
 
+**Built and merged (PR 17, 2026-11-16; fixes in PR 18).** The server runs as a
+systemd service on a small Linux container
+([`server-deploy.md`](server-deploy.md)) and serves the frontend. Remote access
+is a Cloudflare tunnel with Cloudflare Access in front. Firmware `0.6.2-phase6`
+adds CORS for LAN origins only; check `/api/status` for whether the device has
+been updated to it. No Phase 6 hardware test record yet.
+
 - Node service: static hosting for the frontend, UDP log sink, nightly schedule
   backup. Replaces both FastAPI and nginx. *Server side built:* static
   hosting and the settings backup, run as a systemd service on a small container
@@ -181,6 +189,9 @@ Done 2026-11-15 as `0.6.0-phase5`; hardware test in
 - One origin: the server answers `/api/` itself and forwards `/esp/` to the ESP.
 
 ## Decommissioning v1
+
+Not started; waits for spring. The scheduler stays off on the device until
+then.
 
 Keep `isprinklr_esp`, `isprinklr_api`, and `iSprinklr_react` as archives. Nothing
 is deleted until v2 has run a full watering season — or at minimum, several weeks

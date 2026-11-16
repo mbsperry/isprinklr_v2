@@ -1,25 +1,27 @@
 # API contract
 
-**Status: partly implemented.** `/api/status`, `/api/zone/start`,
+**Status: implemented.** Every endpoint below exists. `/api/status`, `/api/zone/start`,
 `/api/zone/stop`, and `/api/update` exist as of Phase 1, and the `time` fields
 of `/api/status` as of Phase 2, and the schedule, zone and config endpoints as
 of Phase 3, and the run endpoints and status fields as of Phase 4, and the
-logging endpoints of both hosts as of Phase 5, and the Node service's backups and static hosting as of Phase 6; their shapes below are the
-implemented ones. The rest is the shape to design against, and this file
-should change with the firmware.
+logging endpoints of both hosts as of Phase 5, and the Node service's backups,
+static hosting and controller proxy, plus the device's CORS check, as of
+Phase 6. The shapes below are the implemented ones, and this file should change
+with the firmware.
 
 Two hosts, not one:
 
 - **The ESP32** — status, control, schedules, recent logs. Authoritative.
 - **The Node service** — log history, schedule backups. Observational.
 
-The frontend holds a base URL for each.
+The frontend uses one origin: the Node service, which answers its own `/api/`
+and forwards `/esp/api/...` to the ESP. The build holds no addresses.
 
 ## ESP32
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/status` | System state: active zone, time validity, current schedule, schedule version, uptime, reset reason, network, heap. |
+| GET | `/api/status` | System state: active zone, time validity, current schedule, schedule version, uptime, reset reason, network, heap. *Implemented.* |
 | POST | `/api/zone/start` | Start one zone for a bounded duration. *Implemented.* |
 | POST | `/api/zone/stop` | Stop the active zone, or a named one. *Implemented.* |
 | GET | `/api/schedules` | All stored schedules plus the active name. *Implemented.* |
@@ -31,7 +33,7 @@ The frontend holds a base URL for each.
 | GET | `/api/zones` | Zone numbers and names. *Implemented.* |
 | PUT | `/api/zones` | Replace the zone list. *Implemented.* |
 | GET | `/api/logs` | The RAM ring buffer. *Implemented (Phase 5).* |
-| GET/PUT | `/api/config` | Device config: schedule time, timezone, log sink. *Implemented.* |
+| GET/PUT | `/api/config` | Device config: schedule time, timezone, log sink, log level. *Implemented.* |
 | GET | `/` | Fallback status page, compiled into the firmware. *Implemented (Phase 5).* |
 | POST | `/api/update` | Firmware upload (OTA). *Implemented.* Refused while a run is in progress. |
 | POST | `/api/run/skip` | Skip the zone the run is on. *Implemented (Phase 4).* |
@@ -39,9 +41,9 @@ The frontend holds a base URL for each.
 
 Notes:
 
-- `/api/status` must carry **both** `time_valid` and a schedule version
-  (counter or hash). The first gates execution; the second lets the server detect
-  drift between its backup and the device.
+- `/api/status` carries **both** `time_valid` and `settings_hash`. The first
+  gates execution; the second lets the server detect drift between its backup
+  and the device.
 - Durations: v1 mixed units — the frontend and API spoke seconds, the firmware
   and the SmartPort protocol speak minutes, and v1's API did an integer
   `seconds // 60` conversion, which silently turned a 30-second zone into a stop

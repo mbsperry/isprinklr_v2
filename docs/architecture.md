@@ -74,9 +74,10 @@ The ESP owns the schedule. The server caches and backs it up. One direction,
 always.
 
 v1's failure mode here was two authoritative copies that could silently
-disagree. To make drift detectable, the ESP exposes a version counter or hash of
-its stored schedule in its status response, so the server can notice a mismatch
-rather than discovering it on a morning when nothing ran.
+disagree. To make drift detectable, the ESP exposes `settings_hash`, an FNV-1a
+hash of its stored settings, in its status response, so the server and the
+frontend can notice a change rather than discovering it on a morning when
+nothing ran.
 
 ## Network and access
 
@@ -104,4 +105,5 @@ server never grants. The ESP refuses non-GET requests from non-LAN origins
 - **A battery-backed RTC.** SNTP plus the internal RTC is enough while the wired
   network is up. Revisit only if combined power-and-WAN outages prove to be a real
   pattern — and note GPIO 9 is the W5500 reset, so I²C would need remapping.
-- **Auth.** See above. The VPN is the boundary.
+- **Auth.** See above. Cloudflare Access on the tunnel is the boundary for
+  remote use; on the LAN there is none.

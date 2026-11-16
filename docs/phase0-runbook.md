@@ -205,7 +205,8 @@ device has a static reservation on the router.
 ## Routine OTA update
 
 How every firmware change ships from now on. From the repo root, on a machine on
-the LAN or the router VPN:
+the LAN. The server's `/esp/` proxy does not forward firmware uploads, so this
+cannot go through the Cloudflare tunnel:
 
 The machine needs `firmware/secrets.ini` with the router's address in
 `ntp_server` (see [Build settings](../firmware/README.md#build-settings)). If
@@ -252,4 +253,5 @@ small as it is.
 - No SNTP, no NVS schedule store, no UDP logging, no LittleFS content. The
   `littlefs` partition is created but unused.
 - No authentication on `/api/update`. Consistent with the rest of the system;
-  the router VPN is the boundary. Anyone on the LAN can flash this device.
+  the device is reachable only from the LAN, and the server's proxy does not
+  forward uploads. Anyone on the LAN can flash this device.
