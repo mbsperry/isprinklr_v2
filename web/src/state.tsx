@@ -54,7 +54,10 @@ export function ControllerProvider({ children }: { children: ReactNode }) {
         await loadSettings();
         hashRef.current = st.settings_hash;
       }
-      if (isRunning(st)) next = FAST_MS;
+      // A run queued a moment ago is still 'idle' until the device's next
+      // tick, so pending entries count as busy too; otherwise the screen waits
+      // out a full slow interval before it notices the zone has started.
+      if (isRunning(st) || st.run?.entries.some((e) => e.outcome === 'pending')) next = FAST_MS;
     } catch {
       setReachable(false);
     } finally {
