@@ -148,11 +148,11 @@ logs to the server.
 ### From the Mac
 
 The commands only need Node and a checkout, so a restore can run from the Mac,
-which has no server data of its own. Fetch a backup from the server (the
+which has no server data of its own. From the top of the checkout, fetch a backup from the server (the
 response wraps it, so keep only `.backup`):
 
 ```bash
-cd ~/projects/isprinklr_v2/server && mkdir -p backups && curl -s http://<server-ip>:8080/api/backups/latest | jq .backup > backups/restore.json
+cd server && mkdir -p backups && curl -s http://<server-ip>:8080/api/backups/latest | jq .backup > backups/restore.json
 ```
 
 `/api/backups` lists them all; put a timestamp in place of `latest` for an
@@ -160,7 +160,7 @@ older one. If the server is down, copy a file from `~/isprinklr-data/backups`
 on it instead. To back up the device straight to the Mac, without the server:
 
 ```bash
-cd ~/projects/isprinklr_v2/server && ISPRINKLR_ESP_URL=http://$ISPRINKLR_DEVICE npm run -s backup
+cd server && ISPRINKLR_ESP_URL=http://$ISPRINKLR_DEVICE npm run -s backup
 ```
 
 That writes to `server/backups/`, which git ignores. Then print the commands,
