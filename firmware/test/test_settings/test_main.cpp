@@ -466,6 +466,74 @@ void test_document_with_log_level() {
   TEST_ASSERT_FALSE(settings::parseDocument(badLevel, &back, &error));
 }
 
+// Sizing for the settings cap (settings_limits.h). Builds documents directly,
+// skipping the API, and prints the stored size and the size of the PUT
+// /api/schedules body the frontend would send for the same data.
+namespace {
+
+settings::Settings sized(int zones, int schedules, int itemsPerSchedule,
+                         std::size_t nameBytes) {
+  settings::Settings s;
+  for (int z = 1; z <= zones; ++z) {
+    std::string name(nameBytes, 'x');
+    const std::string n = std::to_string(z);
+    name.replace(name.size() - n.size(), n.size(), n);
+    s.zones.push_back(settings::Zone{z, name});
+  }
+  settings::DayPattern everyDay;  // longest pattern text: M:TU:W:TH:F:SA:SU
+  everyDay.kind = settings::DayPattern::Kind::kWeekdays;
+  everyDay.weekdays = 0x7f;
+  for (int i = 0; i < schedules; ++i) {
+    settings::Schedule sch;
+    sch.name = std::string(nameBytes, 's');
+    sch.name.replace(nameBytes - 2, 2, i < 10 ? "0" + std::to_string(i)
+                                              : std::to_string(i));
+    for (int z = 1; z <= itemsPerSchedule; ++z) {
+      sch.items.push_back(settings::ScheduleItem{z, everyDay, 240});
+    }
+    s.schedules.push_back(std::move(sch));
+  }
+  s.activeSchedule = s.schedules.empty() ? "" : s.schedules[0].name;
+  s.config.logHost = "192.168.100.200";
+  s.config.logLevel = logging::Level::kInfo;
+  return s;
+}
+
+std::size_t apiBodyBytes(const settings::Settings& s) {
+  JsonDocument doc;
+  settings::writeSchedules(s.schedules, doc["schedules"].to<JsonArray>());
+  std::string out;
+  serializeJson(doc, out);
+  return out.size();
+}
+
+void report(const char* label, const settings::Settings& s) {
+  std::string error;
+  TEST_ASSERT_TRUE_MESSAGE(settings::validate(s, &error), error.c_str());
+  printf("%-34s stored %5zu bytes, PUT /api/schedules body %6zu bytes\n",
+         label, settings::serializeDocument(s).size(), apiBodyBytes(s));
+}
+
+}  // namespace
+
+void test_settings_sizing() {
+  report("10 zones, 10 sched x 10, names 32", sized(10, 10, 10, 32));
+  report("16 zones, 10 sched x 16, names 32", sized(16, 10, 16, 32));
+  report("23 zones, 10 sched x 23, names 32", sized(23, 10, 23, 32));
+  report("48 zones, 1 sched x 48, names 32", sized(48, 1, 48, 32));
+  report("48 zones, 2 sched x 48, names 32", sized(48, 2, 48, 32));
+  report("48 zones, 10 sched x 48, names 32", sized(48, 10, 48, 32));
+  int fit = 0;
+  while (fit < 10 && settings::serializeDocument(sized(48, fit + 1, 48, 32))
+                             .size() <= settings::kMaxDocumentBytes) {
+    ++fit;
+  }
+  printf("full 48-zone schedules that fit with 48 named zones: %d\n", fit);
+  // A 10-zone Pro-C with every schedule slot used still fits.
+  TEST_ASSERT_TRUE(settings::serializeDocument(sized(10, 10, 10, 32)).size() <=
+                   settings::kMaxDocumentBytes);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_log_sink_config);
@@ -482,6 +550,7 @@ int main() {
   RUN_TEST(test_item_validation);
   RUN_TEST(test_too_many_schedules);
   RUN_TEST(test_oversize_document_is_413);
+  RUN_TEST(test_settings_sizing);
   RUN_TEST(test_active_must_exist_and_cannot_be_orphaned);
   RUN_TEST(test_zone_removal_blocked_while_scheduled);
   RUN_TEST(test_zone_validation);
