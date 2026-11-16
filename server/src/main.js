@@ -11,13 +11,15 @@
 //   ISPRINKLR_HTTP_PORT   HTTP port (default 8080)
 //   ISPRINKLR_WEB_DIR     frontend build to serve (default web/dist)
 //   ISPRINKLR_BACKUP_DIR  settings backups (default server/backups)
-//   ISPRINKLR_ESP_URL     the device, e.g. http://192.0.2.10; nightly backups
-//                         are off without it
+//   ISPRINKLR_ESP_URL     the device, e.g. http://192.0.2.10. The web UI reaches
+//                         it through /esp/ here; nightly backups and the UI's
+//                         controller calls are off without it
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { backupOnce, scheduleBackups } from './backup.js';
+import { createEspProxy } from './esp_proxy.js';
 import { createHttpServer } from './http.js';
 import { LogStore } from './log_store.js';
 import { schedulePrune } from './retention.js';
@@ -49,6 +51,7 @@ const server = createHttpServer(store, {
   backupStats: backups.stats,
   backupsDir,
   staticHandler: createStaticHandler(webDir),
+  espProxy: createEspProxy(espUrl),
 });
 server.listen(httpPort, () => {
   console.log(`[server] http://localhost:${httpPort}/ serving ${webDir}`);

@@ -99,11 +99,28 @@ cd ~/isprinklr_v2 && git pull && sudo systemctl restart isprinklr
 Each restart also takes a backup, which is harmless. If `isprinklr.service`
 changed, run the install command above again instead of the restart.
 
-## When the frontend exists
+## Building the frontend
 
 The server serves `web/dist` as it finds it, and shows a placeholder until
-there is one. Building it on the container is one more step after `git pull`;
-the exact command comes with the frontend.
+there is one, so a rebuild needs no restart. Building needs npm, unlike the
+server. The build carries no addresses:
+
+```bash
+cd ~/isprinklr_v2/web && npm ci && npm run build
+```
+
+After a later `git pull`, run the same command again.
+
+The app reaches the controller through this server, at `ISPRINKLR_ESP_URL` in
+`~/isprinklr-data/server.env`. If the controller moves, change it there and
+restart the service.
+
+## Remote access
+
+Point a Cloudflare tunnel's public hostname at `http://localhost:8080` on this
+container, and put a Cloudflare Access policy on that hostname before turning
+it on. The app can start, stop and restart the controller, and has no login of
+its own. The controller is never exposed; only this server talks to it.
 
 ## Restoring a backup to the device
 

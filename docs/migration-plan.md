@@ -174,8 +174,11 @@ Done 2026-11-15 as `0.6.0-phase5`; hardware test in
   (`docs/server-deploy.md`).
 - Frontend rebuilt on Vite. v1 used `react-scripts` 5 (CRA, unmaintained).
   Start from v1's `use_v2_api` branch for endpoint shapes rather than its stale
-  `main`, which still calls endpoints that no longer exist.
-- Two base URLs in config: the ESP for control, the server for logs.
+  `main`, which still calls endpoints that no longer exist. *Built:*
+  mobile-first React + TypeScript in `web/`, covering every v1 page. The
+  browser reaches the ESP through the server's `/esp/` proxy, so the UI works
+  through the Cloudflare tunnel.
+- One origin: the server answers `/api/` itself and forwards `/esp/` to the ESP.
 
 ## Decommissioning v1
 

@@ -23,6 +23,11 @@ on schedule and the only loss is visibility.
    writes them to `settings-<timestamp>.json`. GETs only, each with a 10 s
    timeout; a failure is retried every 30 minutes, four times. This is the
    recovery path for a wiped or dead board.
+4. **Controller proxy.** `/esp/api/...` is forwarded to the ESP's `/api/...`,
+   so the web UI only talks to this origin and works through an HTTPS tunnel.
+   UI traffic only. Writes need an `X-iSprinklr: 1` header, bodies are capped
+   at 16 KB, and firmware upload is not forwarded
+   ([api-contract](../docs/api-contract.md#node-service)).
 
 Replaces v1's FastAPI service, which owned scheduling and was therefore
 load-bearing. This one is not.
@@ -56,10 +61,10 @@ Configuration comes from the environment, all optional:
 |---|---|---|
 | `ISPRINKLR_DB` | `server/data/logs.sqlite` | SQLite file; `server/data/` is git-ignored |
 | `ISPRINKLR_UDP_PORT` | 5514 | Syslog port; matches the firmware default |
-| `ISPRINKLR_HTTP_PORT` | 8080 | The web UI and `/api/logs`, `/api/health`, `/api/backups` |
+| `ISPRINKLR_HTTP_PORT` | 8080 | The web UI, `/api/logs`, `/api/health`, `/api/backups` and `/esp/` |
 | `ISPRINKLR_WEB_DIR` | `web/dist` | Frontend build; a placeholder page is served until it exists |
 | `ISPRINKLR_BACKUP_DIR` | `server/backups` | Settings backups; git-ignored |
-| `ISPRINKLR_ESP_URL` | unset | The device, e.g. `http://192.0.2.10`; backups are off without it |
+| `ISPRINKLR_ESP_URL` | unset | The device, e.g. `http://192.0.2.10`; backups and the web UI's controller calls are off without it |
 
 Under systemd, `isprinklr.service` sets the data paths to `~/isprinklr-data`
 and reads site settings from `~/isprinklr-data/server.env`; see

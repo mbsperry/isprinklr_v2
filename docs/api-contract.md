@@ -315,6 +315,20 @@ time.
 before the export task could send them; lines logged while export was off are
 not counted.
 
+### Browser access (CORS)
+
+The web UI reaches the device through the Node server's `/esp/` proxy, so a
+browser doesn't need CORS for normal use. The device still answers it, for
+tools on the LAN and to refuse other sites. A request whose `Origin` is on the local network
+(localhost, 10/8, 172.16/12, 192.168/16, 169.254/16, a single-label host
+name, or `.local`, `.lan`, `.home.arpa`) gets `Access-Control-Allow-Origin`
+echoing it, and an `OPTIONS` preflight from one gets 204. Any other origin gets
+no CORS headers, a 403 to its preflight, and a 403 `forbidden_origin` to any
+non-GET request, including the bare POSTs a page could send without a
+preflight. Requests with no `Origin` (curl, the Node server's backups) are
+unaffected. The check is `cors::isAllowedOrigin` in
+`firmware/lib/api/src/cors.h`, host-tested in `test/test_cors`.
+
 ## Node service
 
 | Method | Path | Purpose |
@@ -323,8 +337,16 @@ not counted.
 | GET | `/api/health` | Row count, UDP sink counters, last backup. *Implemented (Phase 5; `backup` Phase 6).* |
 | GET | `/api/backups` | Available settings backups. *Implemented (Phase 6).* |
 | GET | `/api/backups/:timestamp` | One backup, for restoring by hand; `latest` for the newest. *Implemented (Phase 6).* |
+| GET, POST, PUT | `/esp/api/...` | Forwarded to the ESP's `/api/...`, for the web UI. *Implemented (Phase 6).* |
 | GET | (anything else) | The built frontend. *Implemented (Phase 6).* |
 
+The `/esp/` proxy (`server/src/esp_proxy.js`) passes the method, query, body
+and `Content-Type` through and returns the ESP's status and body unchanged. It
+sends no cookies or `Origin`. Writes (POST, PUT) must carry `X-iSprinklr: 1` or
+get a 403 `forbidden`. Bodies over 16 KB get a 413 `too_large`. `/esp/api/update`
+is not forwarded, so do OTA on the LAN. When the proxy itself fails, it answers
+502 `controller_unreachable`, 504 `controller_timeout` (10 s), or 503
+`controller_not_configured` (no `ISPRINKLR_ESP_URL`).
 Inbound from the ESP: UDP syslog. Not an HTTP endpoint, deliberately — see
 `architecture.md`.
 
