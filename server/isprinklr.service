@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 Matt Sperry
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# systemd unit template for the server (docs/server-deploy.md). @USER@ and
+# @HOME@ are filled in at install time; site settings such as the device's
+# address go in @HOME@/isprinklr-data/server.env, which is not in the repo
+# (server.env.example shows the keys). Logs go to journald:
+# journalctl -u isprinklr
+#
+# Data lives outside the checkout, under ~/isprinklr-data, so a fresh clone
+# or a `git clean` cannot touch log history or backups.
+
+[Unit]
+Description=iSprinklr v2 server (web UI, UDP log sink, settings backup)
+Documentation=https://github.com/mbsperry/isprinklr_v2/blob/main/docs/server-deploy.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@HOME@/isprinklr_v2/server
+Environment=ISPRINKLR_DB=@HOME@/isprinklr-data/logs.sqlite
+Environment=ISPRINKLR_BACKUP_DIR=@HOME@/isprinklr-data/backups
+Environment=ISPRINKLR_WEB_DIR=@HOME@/isprinklr_v2/web/dist
+EnvironmentFile=@HOME@/isprinklr-data/server.env
+# node:sqlite prints an ExperimentalWarning on every start; it is not news.
+ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning src/main.js
+Restart=on-failure
+RestartSec=5
+# main.js flushes pending log lines on SIGTERM.
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
