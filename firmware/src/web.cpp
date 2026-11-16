@@ -12,6 +12,7 @@
 
 #include "boot_guard.h"
 #include "config.h"
+#include "cors.h"
 #include "device_log.h"
 #include "logs_api.h"
 #include "status_page.h"
@@ -358,6 +359,42 @@ void handleUpload(AsyncWebServerRequest* request, const String& filename,
 }  // namespace
 
 void begin() {
+  // CORS for the web UI, which the Node server hosts on another origin. Only
+  // LAN origins get the headers (lib/api/src/cors.h). A preflight is answered
+  // here, before any route sees it.
+  server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
+    if (!request->hasHeader("Origin")) {
+      next();
+      return;
+    }
+    const String origin = request->header("Origin");
+    const bool allowed = cors::isAllowedOrigin(origin.c_str());
+    auto addHeaders = [&](AsyncWebServerResponse* response) {
+      response->addHeader("Access-Control-Allow-Origin", origin);
+      response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+      response->addHeader("Access-Control-Allow-Headers", "Content-Type");
+      response->addHeader("Access-Control-Max-Age", "600");
+      response->addHeader("Vary", "Origin");
+    };
+    if (request->method() == HTTP_OPTIONS) {
+      AsyncWebServerResponse* response = request->beginResponse(allowed ? 204 : 403);
+      if (allowed) addHeaders(response);
+      request->send(response);
+      return;
+    }
+    if (!allowed && request->method() != HTTP_GET) {
+      // A form post or bare POST from a public page needs no preflight, so
+      // refuse it here rather than let it act.
+      request->send(403, "application/json",
+                    "{\"ok\":false,\"error\":\"forbidden_origin\","
+                    "\"message\":\"requests from this origin are not accepted\"}");
+      return;
+    }
+    next();
+    AsyncWebServerResponse* response = request->getResponse();
+    if (allowed && response) addHeaders(response);
+  });
+
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/logs", HTTP_GET, handleLogs);
 

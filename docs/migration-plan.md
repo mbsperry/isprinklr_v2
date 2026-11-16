@@ -174,7 +174,9 @@ Done 2026-11-15 as `0.6.0-phase5`; hardware test in
   (`docs/server-deploy.md`).
 - Frontend rebuilt on Vite. v1 used `react-scripts` 5 (CRA, unmaintained).
   Start from v1's `use_v2_api` branch for endpoint shapes rather than its stale
-  `main`, which still calls endpoints that no longer exist.
+  `main`, which still calls endpoints that no longer exist. *Built:*
+  mobile-first React + TypeScript in `web/`, covering every v1 page; the
+  device answers CORS for LAN origins so the browser can reach it.
 - Two base URLs in config: the ESP for control, the server for logs.
 
 ## Decommissioning v1

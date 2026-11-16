@@ -99,11 +99,18 @@ cd ~/isprinklr_v2 && git pull && sudo systemctl restart isprinklr
 Each restart also takes a backup, which is harmless. If `isprinklr.service`
 changed, run the install command above again instead of the restart.
 
-## When the frontend exists
+## Building the frontend
 
 The server serves `web/dist` as it finds it, and shows a placeholder until
-there is one. Building it on the container is one more step after `git pull`;
-the exact command comes with the frontend.
+there is one, so a rebuild needs no restart. Building needs npm, unlike the
+server. Tell the build where the controller is, replacing `<device-ip>`:
+
+```bash
+cd ~/isprinklr_v2/web && npm ci && VITE_ESP_URL=http://<device-ip> npm run build
+```
+
+After a later `git pull`, run the same command again. Each browser can
+override the controller address in Settings, in case the controller moves.
 
 ## Restoring a backup to the device
 

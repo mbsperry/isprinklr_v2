@@ -315,6 +315,19 @@ time.
 before the export task could send them; lines logged while export was off are
 not counted.
 
+### Browser access (CORS)
+
+The web UI is hosted by the Node server, a different origin from the device,
+so the device answers CORS. A request whose `Origin` is on the local network
+(localhost, 10/8, 172.16/12, 192.168/16, 169.254/16, a single-label host
+name, or `.local`, `.lan`, `.home.arpa`) gets `Access-Control-Allow-Origin`
+echoing it, and an `OPTIONS` preflight from one gets 204. Any other origin gets
+no CORS headers, a 403 to its preflight, and a 403 `forbidden_origin` to any
+non-GET request, including the bare POSTs a page could send without a
+preflight. Requests with no `Origin` (curl, the Node server's backups) are
+unaffected. The check is `cors::isAllowedOrigin` in
+`firmware/lib/api/src/cors.h`, host-tested in `test/test_cors`.
+
 ## Node service
 
 | Method | Path | Purpose |
